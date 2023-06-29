@@ -11,6 +11,8 @@ from database_methods import *
 def handle_client(client_socket, client_address):
     db = sqlite3.connect('server.db')
     db.execute("PRAGMA foreign_keys = ON")
+    is_logged_in = False
+    logged_in_user = ''
     
     private_key = rsa.PrivateKey.load_pkcs1(open('prkey_server.pem', 'rb').read())
 
@@ -23,6 +25,7 @@ def handle_client(client_socket, client_address):
         if data == 'sign up':
             client_socket.send('Enter username for signup: '.encode())
             username = ''
+            # TODO check username does not contain spaces
             while True:
                 username = decrypt_cipher(client_socket.recv(1024), private_key)
                 if check_user_exists(db, username):
@@ -48,9 +51,51 @@ def handle_client(client_socket, client_address):
 
             password = hashlib.sha256(password.encode()).hexdigest()
 
-            insert_user(db, username, password, user_public_key, False)
+            insert_user(db, username, password, user_public_key, False, client_address[0], client_address[1])
 
             print(f'User {username} signed up')
+        # endregion
+
+        # region Login
+        elif data == 'login':
+            if not is_logged_in:
+                client_socket.send('Enter username for login: '.encode())
+                while True:
+                    username = decrypt_cipher(client_socket.recv(1024), private_key)
+
+                    client_socket.send('Enter password for login: '.encode())
+                    password = decrypt_cipher(client_socket.recv(1024), private_key)
+                    password = hashlib.sha256(password.encode()).hexdigest()
+
+                    if check_user_password(db, username, password):
+                        break
+                    else:
+                        client_socket.send('Wrong username or password, try again: '.encode())
+
+            
+                update_user_login_status(db, username, True)
+                is_logged_in = True
+                logged_in_user = username
+                client_socket.send('you logged in successfuly'.encode())
+
+                print(f'User {username} logged in')
+
+            else:
+                client_socket.send('You are already logged in'.encode())
+                continue
+        # endregion
+
+        # region Logout
+        elif data == 'logout':
+            if is_logged_in:
+                update_user_login_status(db, logged_in_user, False)
+                client_socket.send('you logged out successfuly'.encode())
+                print(f'User {logged_in_user} logged out')
+                is_logged_in = False
+                logged_in_user = ''
+            else:
+                client_socket.send('You are not logged in'.encode())
+
         # endregion
 
         else:

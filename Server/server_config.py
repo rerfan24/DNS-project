@@ -6,13 +6,15 @@ db = sqlite3.connect('server.db')
 db.execute('PRAGMA foreign_keys = ON')
 cursor = db.cursor()
 
-# create users table with a column is_online bolean
+
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS users(
         username TEXT PRIMARY KEY,
         password TEXT NOT NULL,
         public_key TEXT NOT NULL,
-        is_online INTEGER NOT NULL DEFAULT 0
+        is_online INTEGER NOT NULL DEFAULT 0,
+        host TEXT,
+        port INTEGER
     );
 ''')
 
