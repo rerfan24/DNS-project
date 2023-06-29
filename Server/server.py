@@ -25,20 +25,31 @@ def handle_client(client_socket, client_address):
         if data == 'sign up':
             client_socket.send('Enter username for signup: '.encode())
             username = ''
-            # TODO check username does not contain spaces
             while True:
-                username = decrypt_cipher(client_socket.recv(1024), private_key)
+                username = decrypt_cipher(client_socket.recv(1024), private_key).strip()
+                if username == 'exit()':
+                    break
                 if check_user_exists(db, username):
                     client_socket.send('Username already exists, try again: '.encode())
+                elif username.count(' ') > 0:
+                    client_socket.send('Username cannot contain spaces, try again: '.encode())
                 else:
                     break
             
+            if (username == 'exit()'):
+                client_socket.send('Sign up aborted'.encode())
+                continue
             client_socket.send('Enter password for signup: '.encode())
             password = ''
             while True:
                 password = decrypt_cipher(client_socket.recv(1024), private_key)
+                if password == 'exit()':
+                    break
                 client_socket.send('Confirm password for signup: '.encode())
                 confirm = decrypt_cipher(client_socket.recv(1024), private_key)
+                if confirm == 'exit()':
+                    password = 'exit()'
+                    break
 
                 if password == confirm:
                     client_socket.send('Send public key for signup: '.encode())
@@ -46,6 +57,9 @@ def handle_client(client_socket, client_address):
                 else:
                     client_socket.send('Password does not match for signup, try again: '.encode())
 
+            if (password == 'exit()'):
+                client_socket.send('Sign up aborted'.encode())
+                continue
             user_public_key_string = decrypt_cipher(client_socket.recv(1024), private_key)
             user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
 
@@ -62,9 +76,14 @@ def handle_client(client_socket, client_address):
                 client_socket.send('Enter username for login: '.encode())
                 while True:
                     username = decrypt_cipher(client_socket.recv(1024), private_key)
+                    if username == 'exit()':
+                        break
 
                     client_socket.send('Enter password for login: '.encode())
                     password = decrypt_cipher(client_socket.recv(1024), private_key)
+                    if password == 'exit()':
+                        username = 'exit()'
+                        break
                     password = hashlib.sha256(password.encode()).hexdigest()
 
                     if check_user_password(db, username, password):
@@ -72,7 +91,9 @@ def handle_client(client_socket, client_address):
                     else:
                         client_socket.send('Wrong username or password, try again: '.encode())
 
-            
+                if username == 'exit()':
+                    client_socket.send('Login aborted'.encode())
+                    continue
                 update_user_login_status(db, username, True)
                 is_logged_in = True
                 logged_in_user = username

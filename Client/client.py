@@ -29,7 +29,8 @@ def start_client():
         data = client_socket.recv(1024).decode()
 
         # region Sign Up
-        if data.startswith('Enter username for signup:') or data.startswith('Username already exists, try again:'):
+        if data.startswith('Enter username for signup:') or data.startswith('Username already exists, try again:') or\
+              data.startswith('Username cannot contain spaces, try again:'):
             print(data, end='')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
@@ -83,6 +84,8 @@ def start_client():
             print('Enter a message to send to server: ')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
+            if message == 'sign up' or message == 'login':
+                print('If you wanted to abort, type "exit()"')
 
     client_socket.close()
 
