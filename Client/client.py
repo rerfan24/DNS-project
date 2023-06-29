@@ -91,7 +91,7 @@ def start_client():
 
 
 if __name__ == '__main__':
-    # with open("client_config.py") as f:
-    #     exec(f.read())
+    with open("client_config.py") as f:
+        exec(f.read())
 
     start_client()
