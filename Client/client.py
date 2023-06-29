@@ -79,6 +79,14 @@ def start_client():
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
 
+        # region online users
+        elif data.startswith('There are no online users') or data.startswith('These are the online users'):
+            print(data)
+            print('Enter a message to send to server: ')
+            message = input()
+            client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
         else:
             print(data)
             print('Enter a message to send to server: ')

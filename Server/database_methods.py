@@ -30,3 +30,13 @@ def update_user_login_status(db: sqlite3.Connection, username: str, is_online: b
         UPDATE users SET is_online = ? WHERE username = ?
     ''', (is_online, username))
     db.commit()
+
+def get_online_users(db: sqlite3.Connection):
+    cursor = db.cursor()
+    cursor.execute('''
+            SELECT * FROM users WHERE is_online = ?
+        ''', (1,))
+    rows = cursor.fetchall()
+    usernames = [i[0] for i in rows]
+
+    return usernames

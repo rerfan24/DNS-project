@@ -97,7 +97,7 @@ def handle_client(client_socket, client_address):
                 update_user_login_status(db, username, True)
                 is_logged_in = True
                 logged_in_user = username
-                client_socket.send('you logged in successfuly'.encode())
+                client_socket.send('you logged in successfully'.encode())
 
                 print(f'User {username} logged in')
 
@@ -110,7 +110,7 @@ def handle_client(client_socket, client_address):
         elif data == 'logout':
             if is_logged_in:
                 update_user_login_status(db, logged_in_user, False)
-                client_socket.send('you logged out successfuly'.encode())
+                client_socket.send('you logged out successfully'.encode())
                 print(f'User {logged_in_user} logged out')
                 is_logged_in = False
                 logged_in_user = ''
@@ -118,6 +118,23 @@ def handle_client(client_socket, client_address):
                 client_socket.send('You are not logged in'.encode())
 
         # endregion
+
+        # region online users
+        elif data == "onlines":
+
+            if is_logged_in:
+                online_users_list = get_online_users(db)
+                if len(online_users_list) == 0:
+                    client_socket.send('There are no online users'.encode())
+                online_users_str = "These are the online users:\n"
+                for i in online_users_list:
+                    online_users_str += i + '\n'
+                online_users_str = online_users_str[:-1]
+                client_socket.send(online_users_str.encode())
+            else:
+                client_socket.send('Only users can see other online users'.encode())
+        # endregion
+
 
         else:
             print('Received data from client {}: {}'.format(client_address, data))
