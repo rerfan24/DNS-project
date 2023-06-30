@@ -15,6 +15,7 @@ from Server.database_methods import check_user_password, insert_user, check_user
 
 
 def handle_client(client_socket, client_address):
+    old_nonce = ''
     db = sqlite3.connect('server.db')
     db.execute("PRAGMA foreign_keys = ON")
     is_logged_in = False
@@ -24,33 +25,42 @@ def handle_client(client_socket, client_address):
 
     while True:
         data = decrypt_cipher(client_socket.recv(1024), private_key)
+        print(data)
         if not data:
             break
 
         # TODO new code according to two threads in client
         command = data.split()[0]
+        split_data = data.split()
+        new_nonce = split_data[-1].strip()
 
         if command == 'signup':
-            split_data = data.split()
             username = split_data[1].strip()
             password = split_data[2].strip()
+            new_split = data.split("-----BEGIN RSA PUBLIC KEY-----")[0].strip()
+            print(username)
+            print(password)
+            print(new_split)
             if username == 'exit()' or password == 'exit()':
                 break
-            if len(split_data) < 3:
+            if len(new_split.split()) < 3:
                 client_socket.send('signup|Please enter both of username and password.'.encode())
-            elif len(split_data) > 3:
+            elif len(new_split.split()) > 3:
                 client_socket.send('signup|Username and password cannot contain spaces!'.encode())
             elif check_user_exists(db, username):
                 client_socket.send('signup|This username already exists.'.encode())
             else:
-                user_public_key_string = decrypt_cipher(client_socket.recv(1024), private_key)
+                print("here")
+                user_public_key_string = data[data.find("-----BEGIN RSA PUBLIC KEY-----"):].strip()
                 user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
+                print("here2")
 
                 password = hashlib.sha256(password.encode()).hexdigest()
 
                 insert_user(db, username, password, user_public_key, False, client_address[0], client_address[1])
 
-                print(f'signup|User {username} signed up')
+                client_socket.send(f'signup|Successfully, user {username} signed up'.encode())
+                # print(f'signup|Successfully, user {username} signed up||{new_nonce}')
 
         elif command == 'login':
             split_data = data.split()
@@ -58,9 +68,9 @@ def handle_client(client_socket, client_address):
             password = split_data[2].strip()
             if username == 'exit()' or password == 'exit()':
                 break
-            if len(split_data) < 2:
+            if len(split_data) < 3:
                 client_socket.send('login|Please enter both of username and password.'.encode())
-            elif len(split_data) > 2:
+            elif len(split_data) > 3:
                 client_socket.send('login|Username and password cannot contain spaces!'.encode())
 
             password = hashlib.sha256(password.encode()).hexdigest()

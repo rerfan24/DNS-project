@@ -5,13 +5,17 @@ import threading
 from random import random
 
 import rsa
-from utils import encrypt_message, decrypt_cipher, calculate_key
+from utils import encrypt_message, decrypt_cipher, calculate_key, gen_nonce
 from database_methods import get_user_messages, get_all_private_messages, get_group_message
+
 
 logged_in = False
 username_register = ''
 username_login = ''
+public_key = ''
+private_key = ''
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
+last_nonce = ''
 
 db = sqlite3.connect('client.db')
 db.execute("PRAGMA foreign_keys = ON")
@@ -133,12 +137,33 @@ def merge_client():
     client_socket.close()
 
 
-def get_thread(client_socket):
+def get_client(client_socket):
     while True:
+        global last_nonce
         data = client_socket.recv(1024).decode()
 
+        # if last_nonce != data.split("||")[1]:
+        #     print("The message is not secure. Invalid nonce!")
+        #     continue
+
         if data.startswith('signup'):
-            print(data[data.find("|"):])
+            mess = data[data.find("|") + 1:]
+            if mess.startswith("Successfully"):  # Successfully, user {username} signed up
+                print("salaaaaaaaaam")
+                username_register = mess.split()[2]
+                if not os.path.exists('../PublicKeys'):
+                    os.makedirs('../PublicKeys')
+                with open(f"../PublicKeys/{username_register}.pem", "wb") as f:
+                    f.write(public_key.save_pkcs1())
+
+                if not os.path.exists('prkeys'):
+                    os.makedirs('prkeys')
+                with open(f"prkeys/{username_register}.pem", "wb") as f:
+                    f.write(private_key.save_pkcs1())
+                print(mess)
+            else:
+                print(mess)
+
         elif data.startswith('login'):
             mess = data[data.find("|"):]
             splitted_data = data.split()
@@ -174,17 +199,21 @@ def get_thread(client_socket):
             mess = data[data.find("|"):]
 
 
-def send_thread(client_socket):
-    global logged_in
+def send_client(client_socket):
+    global logged_in, public_key, private_key
     while True:
-        print('Enter a message to send to the server: ')
         message = input()
+        # nonce = gen_nonce()
         if message.lower() == 'end':
             break
 
-        if message.startswith("signup"):
+        if message.startswith("signup"):  # signup username password pubkey nonce
             # TODO add public key to message and then send it
-            client_socket.send(encrypt_message(message, pukey_server))
+            public_key, private_key = rsa.newkeys(512)
+            pubkey_str = public_key.save_pkcs1().decode()
+            # new_message = message + " " + pubkey_str + " " + nonce
+            new_message = message + " " + pubkey_str
+            client_socket.send(encrypt_message(new_message, pukey_server))
         elif message.startswith("login"):
             if logged_in:
                 print("You have already Logged in.")
@@ -249,10 +278,10 @@ def start_client():
     # merge_client()
 
     # TODO new code
-    get_thread = threading.Thread(target=get_thread, args=(client_socket,))
+    get_thread = threading.Thread(target=get_client, args=(client_socket,))
     get_thread.start()
 
-    send_thread = threading.Thread(target=send_thread, args=(client_socket,))
+    send_thread = threading.Thread(target=send_client, args=(client_socket,))
     send_thread.start()
     # TODO new code
 

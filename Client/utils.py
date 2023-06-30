@@ -1,6 +1,17 @@
+import hashlib
 import os
+import string
+from random import random
+
 import rsa
 import socket
+
+
+def random_string(size: int) -> str:
+    characters = string.ascii_letters
+    characters += string.digits
+    characters += string.punctuation
+    return ''.join(random.choice(characters) for _ in range(size))
 
 
 def encrypt_message(message: str, public_key: rsa.PublicKey):
@@ -23,3 +34,7 @@ def decrypt_cipher(cipher: bytes, private_key: rsa.PrivateKey) -> str:
 
 def calculate_key(base, exponent, modulus):
     return (base ** exponent) % modulus
+
+
+def gen_nonce() -> str:
+    return hashlib.sha256(random_string(64).encode()).hexdigest()
