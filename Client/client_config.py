@@ -15,6 +15,25 @@ cursor.execute('''
     );
 ''')
 
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS groups_info(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_name TEXT NOT NULL,
+        usernames TEXT NOT NULL,
+        admins TEXT NOT NULL
+    );
+''')
+
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS groups_messages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        message TEXT NOT NULL
+    );
+''')
+
 db.commit()
 
 # if os.path.exists("pukey_client.pem") and os.path.exists("prkey_client.pem"):

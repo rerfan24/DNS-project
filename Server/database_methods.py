@@ -2,7 +2,7 @@ import sqlite3
 import rsa
 
 
-def get_user_info_with_username(db: sqlite3.Connection, username:str):
+def get_user_info_with_username(db: sqlite3.Connection, username: str):
     cursor = db.cursor()
     cursor.execute('''
        SELECT * FROM users WHERE name = ? 
