@@ -178,20 +178,21 @@ def get_client(client_socket):
                 print(mess)
         # endregion
 
-        # region logout        
+        # region logout
         elif data.startswith('logout'):
             mess = data[data.find("|") + 1:]
             if (mess.startswith('you logged out successfully')):
                 logged_in = False
             print(mess)
         # endregion
-        
+
         # region online users
         elif data.startswith('online-users'):
             mess = data[data.find("|") + 1:]
             print(mess)
         # endregion
 
+        # region private message
         elif data.startswith('send-private-message'):
             # TODO
             splitted_data = data.split()
@@ -202,13 +203,20 @@ def get_client(client_socket):
                 pass
             else:
                 pass
+        # endregion
+
+        # region create group
         elif data.startswith('create-group'):
             # TODO
             mess = data[data.find("|"):]
+        # endregion
+
+        # region group message
         elif data.startswith('send-group-message'):
             # TODO
             splitted_data = data.split()
             mess = data[data.find("|"):]
+        # endregion
 
 
 def send_client(client_socket):
@@ -218,7 +226,7 @@ def send_client(client_socket):
         # nonce = gen_nonce()
         if message.lower() == 'end':
             break
-        
+
         # region Sign Up
         if message.startswith("signup"):  # signup username password pubkey nonce
             public_key, private_key = rsa.newkeys(512)
@@ -227,7 +235,7 @@ def send_client(client_socket):
             new_message = message + " " + pubkey_str
             client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
-        
+
         # region Login
         elif message.startswith("login"):
             if logged_in:
@@ -235,7 +243,7 @@ def send_client(client_socket):
             else:
                 client_socket.send(encrypt_message(message, pukey_server))
         # endregion
-        
+
         # region logout
         elif message == "logout":
             client_socket.send(encrypt_message(message, pukey_server))
@@ -245,22 +253,32 @@ def send_client(client_socket):
         elif message.startswith("online-users"):
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
-        
+
+        # region private message
         elif message.startswith('send-private-message'):  # send-private-message username "message"
             splitted_message = message.split()
             des_username = splitted_message[1]
             index = message.find('\"')
-            plain_message = message[index:-1]
+            plain_message = message[index + 1:-1]
             client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region create group
         elif message.startswith('create-group'):  # create-group group-name
             # TODO
             pass
+        # endregion
+
+        # region group message
         elif message.startswith('send-group-message'):  # send-group-message group-name "message"
             splitted_message = message.split()
             des_groupname = splitted_message[1]
             index = message.find('\"')
             plain_message = message[index:-1]
             client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region group message
         elif message.startswith("get-user-messages"):  # get-message username
             temp_username = message.split()[1]
             if logged_in:
@@ -270,7 +288,9 @@ def send_client(client_socket):
                 print("You are not logged in!")
             # TODO show messages from temp_username from client db
             pass
+        # endregion
 
+        # region get private messages
         elif message == "get-all-private-messages":
             # TODO show all the messages from client db
             if logged_in:
@@ -278,14 +298,7 @@ def send_client(client_socket):
             else:
                 print("You are not logged in!")
             pass
-
-        elif message == "get-all-private-messages":
-            # TODO show all the messages from client db
-            if logged_in:
-                get_all_private_messages(db, username_login)
-            else:
-                print("You are not logged in!")
-            pass
+        # endregion
 
         else:
             print("Invalid command!")

@@ -20,7 +20,7 @@ def handle_client(client_socket, client_address):
     db.execute("PRAGMA foreign_keys = ON")
     is_logged_in = False
     logged_in_user = ''
-    
+
     private_key = rsa.PrivateKey.load_pkcs1(open('prkey_server.pem', 'rb').read())
 
     while True:
@@ -85,7 +85,6 @@ def handle_client(client_socket, client_address):
                     print(f'User {username} logged in')
                 else:
                     client_socket.send('login|Wrong username or password, try again!'.encode())
-
 
         elif command == 'logout':
             if len(split_data) > 1:
@@ -186,7 +185,6 @@ def handle_client(client_socket, client_address):
             client_socket.send(response.encode())
 
         # TODO new code according to two threads in client
-
 
         # # region Sign Up
         # if data == 'signup':
