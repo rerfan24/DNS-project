@@ -31,7 +31,7 @@ def insert_private_messages(db: sqlite3.Connection, sender: str, receiver: str, 
 def get_group_message(db: sqlite3.Connection, group_name: str):
     cursor = db.cursor()
     cursor.execute('''
-            SELECT * FROM groups_messages WHERE group = ?
+            SELECT * FROM groups_messages WHERE group_name = ?
         ''', (group_name,))
     return cursor.fetchall()
 
@@ -39,7 +39,7 @@ def get_group_message(db: sqlite3.Connection, group_name: str):
 def insert_group_messages(db: sqlite3.Connection, group_name: str, sender: str, message: str):
     cursor = db.cursor()
     cursor.execute('''
-            INSERT INTO groups_messages(group, sender, message)
+            INSERT INTO groups_messages(group_name, sender, message)
             VALUES(?, ?, ?)
         ''', (group_name, sender, message))
     db.commit()

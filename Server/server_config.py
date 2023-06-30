@@ -20,7 +20,7 @@ cursor.execute('''
 
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS groups(
-        name TEXT PRIMARY KEY,
+        group_name TEXT PRIMARY KEY,
         admins TEXT NOT NULL,
         usernames TEXT NOT NULL,
         session_key TEXT NOT NULL,
