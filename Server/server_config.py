@@ -2,6 +2,9 @@ import sqlite3
 import os
 import rsa
 
+if os.path.exists('server.db'):
+    os.remove('server.db')
+
 db = sqlite3.connect('server.db')
 db.execute('PRAGMA foreign_keys = ON')
 cursor = db.cursor()

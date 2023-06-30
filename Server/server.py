@@ -10,7 +10,7 @@ import sympy
 from utils import encrypt_message, decrypt_cipher, calculate_diff_key, generate_prime
 from database_methods import *
 
-from Server.database_methods import check_user_password, insert_user, check_user_exists, update_user_login_status, \
+from database_methods import check_user_password, insert_user, check_user_exists, update_user_login_status, \
     get_online_users
 
 
@@ -31,6 +31,7 @@ def handle_client(client_socket, client_address):
 
         # TODO new code according to two threads in client
         command = data.split()[0]
+        print(command)
         split_data = data.split()
         new_nonce = split_data[-1].strip()
 
@@ -77,7 +78,7 @@ def handle_client(client_socket, client_address):
             else:
                 password = hashlib.sha256(password.encode()).hexdigest()
                 if check_user_password(db, username, password):
-                    update_user_login_status(db, username, True)
+                    update_user_login_status(db, username, True, client_address[0], client_address[1])
                     is_logged_in = True
                     logged_in_user = username
                     client_socket.send(f'login|you logged in successfully as {username}'.encode())
@@ -87,8 +88,11 @@ def handle_client(client_socket, client_address):
 
 
         elif command == 'logout':
+            if len(split_data) > 1:
+                client_socket.send('logout|You cannot enter anything after logout command'.encode())
+                continue
             if is_logged_in:
-                update_user_login_status(db, logged_in_user, False)
+                update_user_login_status(db, logged_in_user, False, client_address[0], client_address[1])
                 client_socket.send('logout|you logged out successfully'.encode())
                 print(f'User {logged_in_user} logged out')
                 is_logged_in = False

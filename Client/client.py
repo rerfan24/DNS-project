@@ -146,10 +146,10 @@ def get_client(client_socket):
         #     print("The message is not secure. Invalid nonce!")
         #     continue
 
+        # region Sign Up
         if data.startswith('signup'):
             mess = data[data.find("|") + 1:]
             if mess.startswith("Successfully"):  # Successfully, user {username} signed up
-                print("salaaaaaaaaam")
                 username_register = mess.split()[2]
                 if not os.path.exists('../PublicKeys'):
                     os.makedirs('../PublicKeys')
@@ -163,9 +163,11 @@ def get_client(client_socket):
                 print(mess)
             else:
                 print(mess)
+        # endregion
 
+        # region Login
         elif data.startswith('login'):
-            mess = data[data.find("|"):]
+            mess = data[data.find("|") + 1:]
             splitted_data = data.split()
             if mess.startswith('you logged in successfully'):
                 print(mess)
@@ -173,13 +175,23 @@ def get_client(client_socket):
                 logged_in = True
                 username_login = splitted_data[-1]
             else:
-                print(data[1:])
+                print(mess)
+        # endregion
+
+        # region logout        
         elif data.startswith('logout'):
-            mess = data[data.find("|"):]
+            mess = data[data.find("|") + 1:]
+            if (mess.startswith('you logged out successfully')):
+                logged_in = False
             print(mess)
+        # endregion
+        
+        # region online users
         elif data.startswith('online-users'):
-            mess = data[data.find("|"):]
-            print(data)
+            mess = data[data.find("|") + 1:]
+            print(mess)
+        # endregion
+
         elif data.startswith('send-private-message'):
             # TODO
             splitted_data = data.split()
@@ -206,23 +218,34 @@ def send_client(client_socket):
         # nonce = gen_nonce()
         if message.lower() == 'end':
             break
-
+        
+        # region Sign Up
         if message.startswith("signup"):  # signup username password pubkey nonce
-            # TODO add public key to message and then send it
             public_key, private_key = rsa.newkeys(512)
             pubkey_str = public_key.save_pkcs1().decode()
             # new_message = message + " " + pubkey_str + " " + nonce
             new_message = message + " " + pubkey_str
             client_socket.send(encrypt_message(new_message, pukey_server))
+        # endregion
+        
+        # region Login
         elif message.startswith("login"):
             if logged_in:
                 print("You have already Logged in.")
             else:
                 client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+        
+        # region logout
         elif message == "logout":
-            pass
+            client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region online users
         elif message.startswith("online-users"):
             client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+        
         elif message.startswith('send-private-message'):  # send-private-message username "message"
             splitted_message = message.split()
             des_username = splitted_message[1]

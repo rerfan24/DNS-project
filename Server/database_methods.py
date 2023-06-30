@@ -38,11 +38,11 @@ def insert_user(db: sqlite3.Connection, username: str, password: str, public_key
     db.commit()
 
 
-def update_user_login_status(db: sqlite3.Connection, username: str, is_online: bool):
+def update_user_login_status(db: sqlite3.Connection, username: str, is_online: bool, host: str, port: int):
     cursor = db.cursor()
     cursor.execute('''
-        UPDATE users SET is_online = ? WHERE username = ?
-    ''', (is_online, username))
+        UPDATE users SET is_online = ?, host = ?, port = ? WHERE username = ?
+    ''', (is_online, host, port, username))
     db.commit()
 
 
