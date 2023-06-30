@@ -1,10 +1,17 @@
 import socket
 import os
+import threading
+from random import random
+
 import rsa
-from utils import encrypt_message, decrypt_cipher
+from utils import encrypt_message, decrypt_cipher, calculate_key
 
+logged_in = False
+username_register = ''
+username_login = ''
+pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 
-def start_client():
+def merge_client():
     logged_in = False
     username_register = ''
     username_login = ''
@@ -17,7 +24,7 @@ def start_client():
     port = 12345
 
     client_socket.connect((host, port))
-    print('Enter a message to send to server: ')
+    print('Enter a message to send to the server: ')
     message = input()
     client_socket.send(encrypt_message(message, pukey_server))
     # client_socket.send(message.encode())
@@ -29,14 +36,15 @@ def start_client():
         data = client_socket.recv(1024).decode()
 
         # region Sign Up
-        if data.startswith('Enter username for signup:') or data.startswith('Username already exists, try again:') or\
-              data.startswith('Username cannot contain spaces, try again:'):
+        if data.startswith('Enter username for signup:') or data.startswith('Username already exists, try again:') or \
+                data.startswith('Username cannot contain spaces, try again:'):
             print(data, end='')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
             username_register = message
 
-        elif data.startswith('Enter password for signup:') or data.startswith('Password does not match for signup, try again:'):
+        elif data.startswith('Enter password for signup:') or data.startswith(
+                'Password does not match for signup, try again:'):
             print(data, end='')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
@@ -50,12 +58,12 @@ def start_client():
             public_key, private_key = rsa.newkeys(512)
             client_socket.send(encrypt_message(public_key.save_pkcs1().decode(), pukey_server))
             print('Public key sent to server')
-            
+
             if not os.path.exists('prkeys'):
                 os.makedirs('prkeys')
             with open(f"prkeys/{username_register}.pem", "wb") as f:
                 f.write(private_key.save_pkcs1())
-            
+
             print('Enter a message to send to server: ')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
@@ -71,7 +79,7 @@ def start_client():
             print(data, end='')
             message = input()
             client_socket.send(encrypt_message(message, pukey_server))
-        elif data.startswith('you logged in successfuly'):
+        elif data.startswith('you logged in successfully'):
             logged_in = True
             print(data)
             print('Enter a message to send to server: ')
@@ -87,6 +95,27 @@ def start_client():
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
 
+        # region Send message
+        elif data.startswith('Destination username:') or data.startswith('This username does not exist, try again:'):
+            print(data, end='')
+            message = input()
+            client_socket.send(encrypt_message(message, pukey_server))
+        elif data.startswith('Write your message:'):
+            prime = int(client_socket.recv(1024).decode())
+            base = int(client_socket.recv(1024).decode())
+            X = random.randint(2, prime - 2)
+
+            Y = calculate_key(base, X, prime)
+
+            # TODO: use long term key instead of pubkey server
+            client_socket.send(encrypt_message(str(Y), pukey_server))
+            shared_key = int(client_socket.recv(1024).decode())
+
+            print(data, end='')
+            message = input()
+            client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
         else:
             print(data)
             print('Enter a message to send to server: ')
@@ -96,6 +125,83 @@ def start_client():
                 print('If you wanted to abort, type "exit()"')
 
     client_socket.close()
+
+
+def get_thread(client_socket):
+    while True:
+        data = client_socket.recv(1024).decode()
+
+        if data.startswith('signup'):
+            splitted_data = data.split()
+            print(data[1:])
+        elif data.startswith('login'):
+            splitted_data = data.split()
+            if " ".join(splitted_data[1:]).startswith('you logged in successfully'):
+                print(" ".join(splitted_data[1:]))
+                # successfully logged in as username
+                logged_in = True
+                username_login = splitted_data[-1]
+            else:
+                print(data[1:])
+        elif data.startswith('logout'):
+            pass
+        elif data.startswith('online users'):
+            print(data)
+        elif data.startswith('send message'):
+            splitted_data = data.split()
+            if data.startswith('This user is not online'):
+                pass
+            elif data.startswith('This username does not exist'):
+                pass
+            else:
+                pass
+
+
+def send_thread(client_socket):
+    global logged_in
+    while True:
+        print('Enter a message to send to the server: ')
+        message = input()
+        if message.lower() == 'end':
+            break
+
+        if message.startswith("signup"):
+            # TODO add public key to message and then send it
+            client_socket.send(encrypt_message(message, pukey_server))
+        elif message.startswith("login"):
+            if logged_in:
+                print("You have already Logged in.")
+            else:
+                client_socket.send(encrypt_message(message, pukey_server))
+        elif message == "logout":
+            pass
+        elif message.startswith("online users"):
+            client_socket.send(encrypt_message(message, pukey_server))
+        elif message.startswith('send message'):
+            splitted_message = message.split()
+            des_username = splitted_message[2]
+            plain_message = " ".join(splitted_message[3:])
+            client_socket.send(encrypt_message(message, pukey_server))
+        else:
+            print("Invalid command!")
+
+
+def start_client():
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    host = '127.0.0.1'
+    port = 12345
+
+    client_socket.connect((host, port))
+    merge_client()
+
+    # TODO new code
+    # get_thread = threading.Thread(target=get_thread, args=(client_socket,))
+    # get_thread.start()
+    #
+    # send_thread = threading.Thread(target=send_thread, args=(client_socket,))
+    # send_thread.start()
+    # TODO new code
 
 
 if __name__ == '__main__':

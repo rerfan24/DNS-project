@@ -2,6 +2,9 @@ import os
 import rsa
 import socket
 
+import sympy
+
+
 def encrypt_message(message: str, public_key: rsa.PublicKey):
     n = 53
     chunks = [message[i:i + n] for i in range(0, len(message), n)]
@@ -11,9 +14,21 @@ def encrypt_message(message: str, public_key: rsa.PublicKey):
         cipher += chunk_cipher
     return cipher
 
+
 def decrypt_cipher(cipher: bytes, private_key: rsa.PrivateKey) -> str:
     n = 64
     chunks = [cipher[i:i + n] for i in range(0, len(cipher), n)]
     chunks_plain = [rsa.decrypt(i, private_key).decode() for i in chunks]
     plain = ''.join(chunks_plain)
     return plain
+
+
+def calculate_diff_key(base, exponent, modulus):
+    return pow(base, exponent, modulus)
+
+
+def generate_prime():
+    prime = sympy.randprime(100, 1000)
+    while not sympy.isprime(prime):
+        prime = sympy.randprime(100, 1000)
+    return prime

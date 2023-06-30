@@ -1,11 +1,17 @@
 import socket
 import threading
+from random import random
+
 import rsa
 import sqlite3
 import hashlib
 
-from utils import encrypt_message, decrypt_cipher
+import sympy
+from utils import encrypt_message, decrypt_cipher, calculate_diff_key, generate_prime
 from database_methods import *
+
+from Server.database_methods import check_user_password, insert_user, check_user_exists, update_user_login_status, \
+    get_online_users
 
 
 def handle_client(client_socket, client_address):
@@ -20,9 +26,71 @@ def handle_client(client_socket, client_address):
         data = decrypt_cipher(client_socket.recv(1024), private_key)
         if not data:
             break
-        
+
+        # TODO new code according to two threads in client
+        # command = data.split()[0]
+        #
+        # if command == 'signup':
+        #     split_data = data.split()
+        #     username = split_data[1].strip()
+        #     password = split_data[2].strip()
+        #     if username == 'exit()' or password == 'exit()':
+        #         break
+        #     if len(split_data) < 2:
+        #         client_socket.send('Please enter both of username and password.'.encode())
+        #     elif len(split_data) > 2:
+        #         client_socket.send('Username and password cannot contain spaces!'.encode())
+        #     elif check_user_exists(db, username):
+        #         client_socket.send('This username already exists.'.encode())
+        #     else:
+        #         user_public_key_string = decrypt_cipher(client_socket.recv(1024), private_key)
+        #         user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
+        #
+        #         password = hashlib.sha256(password.encode()).hexdigest()
+        #
+        #         insert_user(db, username, password, user_public_key, False, client_address[0], client_address[1])
+        #
+        #         print(f'User {username} signed up')
+        #
+        # elif command == 'login':
+        #     split_data = data.split()
+        #     username = split_data[1].strip()
+        #     password = split_data[2].strip()
+        #     if username == 'exit()' or password == 'exit()':
+        #         break
+        #     if len(split_data) < 2:
+        #         client_socket.send('Please enter both of username and password.'.encode())
+        #     elif len(split_data) > 2:
+        #         client_socket.send('Username and password cannot contain spaces!'.encode())
+        #
+        #     password = hashlib.sha256(password.encode()).hexdigest()
+        #     if check_user_password(db, username, password):
+        #         break
+        #     else:
+        #         client_socket.send('Wrong username or password, try again!'.encode())
+        #
+        #     update_user_login_status(db, username, True)
+        #     is_logged_in = True
+        #     logged_in_user = username
+        #     client_socket.send('you logged in successfully'.encode())
+        #
+        #     print(f'User {username} logged in')
+        #
+        # elif command == 'logout':
+        #     if is_logged_in:
+        #         update_user_login_status(db, logged_in_user, False)
+        #         client_socket.send('you logged out successfully'.encode())
+        #         print(f'User {logged_in_user} logged out')
+        #         is_logged_in = False
+        #         logged_in_user = ''
+        #     else:
+        #         client_socket.send('You are not logged in'.encode())
+
+        # TODO new code according to two threads in client
+
+
         # region Sign Up
-        if data == 'sign up':
+        if data == 'signup':
             client_socket.send('Enter username for signup: '.encode())
             username = ''
             while True:
@@ -35,10 +103,11 @@ def handle_client(client_socket, client_address):
                     client_socket.send('Username cannot contain spaces, try again: '.encode())
                 else:
                     break
-            
-            if (username == 'exit()'):
+
+            if username == 'exit()':
                 client_socket.send('Sign up aborted'.encode())
                 continue
+
             client_socket.send('Enter password for signup: '.encode())
             password = ''
             while True:
@@ -57,7 +126,7 @@ def handle_client(client_socket, client_address):
                 else:
                     client_socket.send('Password does not match for signup, try again: '.encode())
 
-            if (password == 'exit()'):
+            if password == 'exit()':
                 client_socket.send('Sign up aborted'.encode())
                 continue
             user_public_key_string = decrypt_cipher(client_socket.recv(1024), private_key)
@@ -116,7 +185,29 @@ def handle_client(client_socket, client_address):
                 logged_in_user = ''
             else:
                 client_socket.send('You are not logged in'.encode())
+        # endregion
 
+        # region Send Message
+        elif data == 'send message':
+            if is_logged_in:
+                client_socket.send('Destination username: '.encode())
+                while True:
+                    des_username = decrypt_cipher(client_socket.recv(1024), private_key)
+
+                    if check_user_exists(db, des_username):
+                        break
+                    else:
+                        client_socket.send('This username does not exist, try again: '.encode())
+
+                client_socket.send('Write your message: '.encode())
+                prime = generate_prime()
+                base = random.randint(2, prime - 2)
+                client_socket.send(str(prime).encode())
+                client_socket.send(str(base).encode())
+
+                y1_client = int(decrypt_cipher(client_socket.recv(1024), private_key))
+            else:
+                client_socket.send('You are not logged in'.encode())
         # endregion
 
         # region online users
@@ -168,5 +259,5 @@ def start_server():
 if __name__ == '__main__':
     with open("server_config.py") as f:
         exec(f.read())
-    
+
     start_server()
