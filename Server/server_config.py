@@ -18,6 +18,19 @@ cursor.execute('''
     );
 ''')
 
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS groups(
+        name TEXT PRIMARY KEY,
+        admins TEXT NOT NULL,
+        usernames TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        online_users TEXT,
+        hosts TEXT,
+        ports TEXT
+    );
+    
+''')
+
 db.commit()
 
 public_key, private_key = rsa.newkeys(512)
