@@ -11,6 +11,7 @@ username_register = ''
 username_login = ''
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 
+
 def merge_client():
     logged_in = False
     username_register = ''
@@ -132,29 +133,40 @@ def get_thread(client_socket):
         data = client_socket.recv(1024).decode()
 
         if data.startswith('signup'):
-            splitted_data = data.split()
-            print(data[1:])
+            print(data[data.find("|"):])
         elif data.startswith('login'):
+            mess = data[data.find("|"):]
             splitted_data = data.split()
-            if " ".join(splitted_data[1:]).startswith('you logged in successfully'):
-                print(" ".join(splitted_data[1:]))
+            if mess.startswith('you logged in successfully'):
+                print(mess)
                 # successfully logged in as username
                 logged_in = True
                 username_login = splitted_data[-1]
             else:
                 print(data[1:])
         elif data.startswith('logout'):
-            pass
-        elif data.startswith('online users'):
+            mess = data[data.find("|"):]
+            print(mess)
+        elif data.startswith('online-users'):
+            mess = data[data.find("|"):]
             print(data)
-        elif data.startswith('send message'):
+        elif data.startswith('send-private-message'):
+            # TODO
             splitted_data = data.split()
-            if data.startswith('This user is not online'):
+            mess = data[data.find("|"):]
+            if mess.startswith('This user is not online'):
                 pass
-            elif data.startswith('This username does not exist'):
+            elif mess.startswith('This username does not exist'):
                 pass
             else:
                 pass
+        elif data.startswith('create-group'):
+            # TODO
+            mess = data[data.find("|"):]
+        elif data.startswith('send-group-message'):
+            # TODO
+            splitted_data = data.split()
+            mess = data[data.find("|"):]
 
 
 def send_thread(client_socket):
@@ -175,12 +187,22 @@ def send_thread(client_socket):
                 client_socket.send(encrypt_message(message, pukey_server))
         elif message == "logout":
             pass
-        elif message.startswith("online users"):
+        elif message.startswith("online-users"):
             client_socket.send(encrypt_message(message, pukey_server))
-        elif message.startswith('send message'):
+        elif message.startswith('send-private-message'):  # send-private-message username "message"
             splitted_message = message.split()
-            des_username = splitted_message[2]
-            plain_message = " ".join(splitted_message[3:])
+            des_username = splitted_message[1]
+            index = message.find('\"')
+            plain_message = message[index:-1]
+            client_socket.send(encrypt_message(message, pukey_server))
+        elif message.startswith('create-group'):  # create-group group-name
+            # TODO
+            pass
+        elif message.startswith('send-group-message'):  # send-group-message group-name "message"
+            splitted_message = message.split()
+            des_groupname = splitted_message[1]
+            index = message.find('\"')
+            plain_message = message[index:-1]
             client_socket.send(encrypt_message(message, pukey_server))
         else:
             print("Invalid command!")
