@@ -72,19 +72,19 @@ def handle_client(client_socket, client_address):
                 client_socket.send('login|Please enter both of username and password.'.encode())
             elif len(split_data) > 3:
                 client_socket.send('login|Username and password cannot contain spaces!'.encode())
-
-            password = hashlib.sha256(password.encode()).hexdigest()
-            if check_user_password(db, username, password):
-                break
+            elif logged_in_user:
+                client_socket.send('login|You have already logged in!'.encode())
             else:
-                client_socket.send('login|Wrong username or password, try again!'.encode())
+                password = hashlib.sha256(password.encode()).hexdigest()
+                if check_user_password(db, username, password):
+                    update_user_login_status(db, username, True)
+                    is_logged_in = True
+                    logged_in_user = username
+                    client_socket.send(f'login|you logged in successfully as {username}'.encode())
+                    print(f'User {username} logged in')
+                else:
+                    client_socket.send('login|Wrong username or password, try again!'.encode())
 
-            update_user_login_status(db, username, True)
-            is_logged_in = True
-            logged_in_user = username
-            client_socket.send(f'login|you logged in successfully as {username}' .encode())
-
-            print(f'User {username} logged in')
 
         elif command == 'logout':
             if is_logged_in:
