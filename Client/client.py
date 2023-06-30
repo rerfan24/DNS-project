@@ -16,6 +16,7 @@ pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', '
 db = sqlite3.connect('client.db')
 db.execute("PRAGMA foreign_keys = ON")
 
+
 def merge_client():
     logged_in = False
     username_register = ''
@@ -245,14 +246,14 @@ def start_client():
     port = 12345
 
     client_socket.connect((host, port))
-    merge_client()
+    # merge_client()
 
     # TODO new code
-    # get_thread = threading.Thread(target=get_thread, args=(client_socket,))
-    # get_thread.start()
-    #
-    # send_thread = threading.Thread(target=send_thread, args=(client_socket,))
-    # send_thread.start()
+    get_thread = threading.Thread(target=get_thread, args=(client_socket,))
+    get_thread.start()
+
+    send_thread = threading.Thread(target=send_thread, args=(client_socket,))
+    send_thread.start()
     # TODO new code
 
 
