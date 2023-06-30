@@ -5,11 +5,12 @@ import rsa
 def get_user_info_with_username(db: sqlite3.Connection, username: str):
     cursor = db.cursor()
     cursor.execute('''
-       SELECT * FROM users WHERE name = ? 
+       SELECT * FROM users WHERE username = ? 
     ''', (username,))
-    if cursor.fetchone() is None:
+    user_info = cursor.fetchone()
+    if user_info is None:
         return -1
-    return cursor.fetchone()
+    return user_info
 
 
 def check_user_exists(db: sqlite3.Connection, username: str) -> bool:

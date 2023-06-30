@@ -23,6 +23,15 @@ def encrypt_message(message: str, public_key: rsa.PublicKey):
         cipher += chunk_cipher
     return cipher
 
+def encrypt_message_byte(message: bytes, public_key: rsa.PublicKey):
+    n = 53
+    chunks = [message[i:i + n] for i in range(0, len(message), n)]
+    chunks_cipher = [rsa.encrypt(i, public_key) for i in chunks]
+    cipher = b''
+    for chunk_cipher in chunks_cipher:
+        cipher += chunk_cipher
+    return cipher
+
 
 def decrypt_cipher(cipher: bytes, private_key: rsa.PrivateKey) -> str:
     n = 64

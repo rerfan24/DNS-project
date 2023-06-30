@@ -5,13 +5,17 @@ from random import random
 import rsa
 import sqlite3
 import hashlib
+from pyDH import DiffieHellman
 
 import sympy
+
 from utils import encrypt_message, decrypt_cipher, calculate_diff_key, generate_prime
 from database_methods import *
 
 from database_methods import check_user_password, insert_user, check_user_exists, update_user_login_status, \
-    get_online_users
+    get_online_users, get_user_info_with_username
+
+sockets = {}
 
 
 def handle_client(client_socket, client_address):
@@ -25,23 +29,20 @@ def handle_client(client_socket, client_address):
 
     while True:
         data = decrypt_cipher(client_socket.recv(1024), private_key)
-        print(data)
+        print("data: ", data)
         if not data:
             break
 
         # TODO new code according to two threads in client
         command = data.split()[0]
-        print(command)
         split_data = data.split()
         new_nonce = split_data[-1].strip()
 
+        # region signup
         if command == 'signup':
             username = split_data[1].strip()
             password = split_data[2].strip()
             new_split = data.split("-----BEGIN RSA PUBLIC KEY-----")[0].strip()
-            print(username)
-            print(password)
-            print(new_split)
             if username == 'exit()' or password == 'exit()':
                 break
             if len(new_split.split()) < 3:
@@ -51,10 +52,8 @@ def handle_client(client_socket, client_address):
             elif check_user_exists(db, username):
                 client_socket.send('signup|This username already exists.'.encode())
             else:
-                print("here")
                 user_public_key_string = data[data.find("-----BEGIN RSA PUBLIC KEY-----"):].strip()
                 user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
-                print("here2")
 
                 password = hashlib.sha256(password.encode()).hexdigest()
 
@@ -62,7 +61,9 @@ def handle_client(client_socket, client_address):
 
                 client_socket.send(f'signup|Successfully, user {username} signed up'.encode())
                 # print(f'signup|Successfully, user {username} signed up||{new_nonce}')
+        # endregion
 
+        # region login
         elif command == 'login':
             split_data = data.split()
             username = split_data[1].strip()
@@ -82,10 +83,13 @@ def handle_client(client_socket, client_address):
                     is_logged_in = True
                     logged_in_user = username
                     client_socket.send(f'login|you logged in successfully as {username}'.encode())
+                    sockets[username] = client_socket
                     print(f'User {username} logged in')
                 else:
                     client_socket.send('login|Wrong username or password, try again!'.encode())
+        # endregion
 
+        # region logout
         elif command == 'logout':
             if len(split_data) > 1:
                 client_socket.send('logout|You cannot enter anything after logout command'.encode())
@@ -94,12 +98,15 @@ def handle_client(client_socket, client_address):
                 update_user_login_status(db, logged_in_user, False, client_address[0], client_address[1])
                 client_socket.send('logout|you logged out successfully'.encode())
                 print(f'User {logged_in_user} logged out')
+                del sockets[logged_in_user]
                 is_logged_in = False
                 logged_in_user = ''
             else:
                 client_socket.send('logout|You are not logged in'.encode())
                 continue
+        # endregion
 
+        # region online-users
         elif command == 'online-users':
             if is_logged_in:
                 online_users_list = get_online_users(db)
@@ -112,7 +119,56 @@ def handle_client(client_socket, client_address):
                 client_socket.send(online_users_str.encode())
             else:
                 client_socket.send('online-users|Only logged in users can see other online users'.encode())
+        # endregion
 
+        # region private-connection
+        elif command == 'private-connect':
+            split_data = data.split()
+            des_username = split_data[1]
+            if is_logged_in:
+                des_user = get_user_info_with_username(db, des_username)
+                if des_user == -1:
+                    client_socket.send('private-connect|This username does not exist.'.encode())
+                else:
+                    if des_user[3] == 1:
+                        print("Creating DH!")
+                        current_user = get_user_info_with_username(db, logged_in_user)
+
+                        client_socket.send(f'private-connect|DH {des_username} public key: {des_user[2]}'.encode())
+
+                        if current_user != -1:
+                            sockets[des_username].send(f'private-connect|DH {logged_in_user} public key: {current_user[2]}'.encode())
+                        
+                    else:
+                        client_socket.send('private-connect|This user is not online.'.encode())
+
+
+            else:
+                client_socket.send('private-connect|Only logged in users can connect to other users'.encode())
+        # endregion
+
+        # region forward-message
+        elif command == 'forward':
+            split_data = data.split()
+            des_username = split_data[2]
+            
+            if is_logged_in:
+                if (split_data[3] == 'session'):
+                    if des_username in sockets:
+                        sockets[des_username].send(f'forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode())
+                        client_socket.send(f'private-connect|You can now chat with {des_username}'.encode())
+                    else:
+                        client_socket.send('forward|This user is not online.'.encode())
+                else:
+                    client_socket.send('forward|Not implemented!'.encode())
+            else:
+                client_socket.send('forward|Only logged in users can send messages'.encode())
+
+            # pubkey1 = decrypt_cipher(sockets[des_username].recv(1024), private_key)
+            # pubkey2 = decrypt_cipher(client_socket.recv(1024), private_key)
+        # endregion
+
+        # region private-message
         elif command == 'send-private-message':
             if is_logged_in:
                 source_username = logged_in_user
@@ -136,6 +192,7 @@ def handle_client(client_socket, client_address):
                 y1_client = int(decrypt_cipher(client_socket.recv(1024), private_key))
             else:
                 client_socket.send('send-private-message|You are not logged in'.encode())
+        # endregion
 
         elif command == 'create-group':
             if is_logged_in:
@@ -185,105 +242,6 @@ def handle_client(client_socket, client_address):
             client_socket.send(response.encode())
 
         # TODO new code according to two threads in client
-
-        # # region Sign Up
-        # if data == 'signup':
-        #     client_socket.send('Enter username for signup: '.encode())
-        #     username = ''
-        #     while True:
-        #         username = decrypt_cipher(client_socket.recv(1024), private_key).strip()
-        #         if username == 'exit()':
-        #             break
-        #         if check_user_exists(db, username):
-        #             client_socket.send('Username already exists, try again: '.encode())
-        #         elif username.count(' ') > 0:
-        #             client_socket.send('Username cannot contain spaces, try again: '.encode())
-        #         else:
-        #             break
-        #
-        #     if username == 'exit()':
-        #         client_socket.send('Sign up aborted'.encode())
-        #         continue
-        #
-        #     client_socket.send('Enter password for signup: '.encode())
-        #     password = ''
-        #     while True:
-        #         password = decrypt_cipher(client_socket.recv(1024), private_key)
-        #         if password == 'exit()':
-        #             break
-        #         client_socket.send('Confirm password for signup: '.encode())
-        #         confirm = decrypt_cipher(client_socket.recv(1024), private_key)
-        #         if confirm == 'exit()':
-        #             password = 'exit()'
-        #             break
-        #
-        #         if password == confirm:
-        #             client_socket.send('Send public key for signup: '.encode())
-        #             break
-        #         else:
-        #             client_socket.send('Password does not match for signup, try again: '.encode())
-        #
-        #     if password == 'exit()':
-        #         client_socket.send('Sign up aborted'.encode())
-        #         continue
-        #     user_public_key_string = decrypt_cipher(client_socket.recv(1024), private_key)
-        #     user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
-        #
-        #     password = hashlib.sha256(password.encode()).hexdigest()
-        #
-        #     insert_user(db, username, password, user_public_key, False, client_address[0], client_address[1])
-        #
-        #     print(f'User {username} signed up')
-        # # endregion
-        #
-        # # region Login
-        # elif data == 'login':
-        #     if not is_logged_in:
-        #         client_socket.send('Enter username for login: '.encode())
-        #         while True:
-        #             username = decrypt_cipher(client_socket.recv(1024), private_key)
-        #             if username == 'exit()':
-        #                 break
-        #
-        #             client_socket.send('Enter password for login: '.encode())
-        #             password = decrypt_cipher(client_socket.recv(1024), private_key)
-        #             if password == 'exit()':
-        #                 username = 'exit()'
-        #                 break
-        #             password = hashlib.sha256(password.encode()).hexdigest()
-        #
-        #             if check_user_password(db, username, password):
-        #                 break
-        #             else:
-        #                 client_socket.send('Wrong username or password, try again: '.encode())
-        #
-        #         if username == 'exit()':
-        #             client_socket.send('Login aborted'.encode())
-        #             continue
-        #         update_user_login_status(db, username, True)
-        #         is_logged_in = True
-        #         logged_in_user = username
-        #         client_socket.send('you logged in successfully'.encode())
-        #
-        #         print(f'User {username} logged in')
-        #
-        #     else:
-        #         client_socket.send('You are already logged in'.encode())
-        #         continue
-        # # endregion
-        #
-        # # region Logout
-        # elif data == 'logout':
-        #     if is_logged_in:
-        #         update_user_login_status(db, logged_in_user, False)
-        #         client_socket.send('you logged out successfully'.encode())
-        #         print(f'User {logged_in_user} logged out')
-        #         is_logged_in = False
-        #         logged_in_user = ''
-        #     else:
-        #         client_socket.send('You are not logged in'.encode())
-        # # endregion
-        #
         # # region Send Message
         # elif data == 'send message':
         #     if is_logged_in:
@@ -306,29 +264,7 @@ def handle_client(client_socket, client_address):
         #     else:
         #         client_socket.send('You are not logged in'.encode())
         # # endregion
-        #
-        # # region online users
-        # elif data == "onlines":
-        #
-        #     if is_logged_in:
-        #         online_users_list = get_online_users(db)
-        #         if len(online_users_list) == 0:
-        #             client_socket.send('There are no online users'.encode())
-        #         online_users_str = "These are the online users:\n"
-        #         for i in online_users_list:
-        #             online_users_str += i + '\n'
-        #         online_users_str = online_users_str[:-1]
-        #         client_socket.send(online_users_str.encode())
-        #     else:
-        #         client_socket.send('Only users can see other online users'.encode())
-        # # endregion
-        #
-        #
-        # else:
-        #     print('Received data from client {}: {}'.format(client_address, data))
-        #
-        #     response = 'Message received: {}'.format(data)
-        #     client_socket.send(response.encode())
+        
 
     client_socket.close()
     print('Client {} disconnected'.format(client_address))

@@ -3,13 +3,15 @@ import os
 import sqlite3
 import threading
 from random import random
+import pyDH
 
 import rsa
-from utils import encrypt_message, decrypt_cipher, calculate_key, gen_nonce
+from utils import *
 from database_methods import get_user_messages, get_all_private_messages, get_group_message
 
 
 logged_in = False
+dh_self = None
 username_register = ''
 username_login = ''
 public_key = ''
@@ -17,129 +19,15 @@ private_key = ''
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 last_nonce = ''
 
+sessions = {}
+
 db = sqlite3.connect('client.db')
 db.execute("PRAGMA foreign_keys = ON")
 
 
-def merge_client():
-    logged_in = False
-    username_register = ''
-    username_login = ''
-
-    pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
-
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    host = '127.0.0.1'
-    port = 12345
-
-    client_socket.connect((host, port))
-    print('Enter a message to send to the server: ')
-    message = input()
-    client_socket.send(encrypt_message(message, pukey_server))
-    # client_socket.send(message.encode())
-
-    while True:
-        if message.lower() == 'end':
-            break
-
-        data = client_socket.recv(1024).decode()
-
-        # region Sign Up
-        if data.startswith('Enter username for signup:') or data.startswith('Username already exists, try again:') or \
-                data.startswith('Username cannot contain spaces, try again:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-            username_register = message
-
-        elif data.startswith('Enter password for signup:') or data.startswith(
-                'Password does not match for signup, try again:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-
-        elif data.startswith('Confirm password for signup:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-
-        elif data.startswith('Send public key for signup:'):
-            public_key, private_key = rsa.newkeys(512)
-            client_socket.send(encrypt_message(public_key.save_pkcs1().decode(), pukey_server))
-            print('Public key sent to server')
-
-            if not os.path.exists('prkeys'):
-                os.makedirs('prkeys')
-            with open(f"prkeys/{username_register}.pem", "wb") as f:
-                f.write(private_key.save_pkcs1())
-
-            print('Enter a message to send to server: ')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        # endregion
-
-        # region Login
-        elif data.startswith('Enter username for login:') or data.startswith('Wrong username or password, try again:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-            username_login = message
-        elif data.startswith('Enter password for login:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        elif data.startswith('you logged in successfully'):
-            logged_in = True
-            print(data)
-            print('Enter a message to send to server: ')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        # endregion
-
-        # region online users
-        elif data.startswith('There are no online users') or data.startswith('These are the online users'):
-            print(data)
-            print('Enter a message to send to server: ')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        # endregion
-
-        # region Send message
-        elif data.startswith('Destination username:') or data.startswith('This username does not exist, try again:'):
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        elif data.startswith('Write your message:'):
-            prime = int(client_socket.recv(1024).decode())
-            base = int(client_socket.recv(1024).decode())
-            X = random.randint(2, prime - 2)
-
-            Y = calculate_key(base, X, prime)
-
-            # TODO: use long term key instead of pubkey server
-            client_socket.send(encrypt_message(str(Y), pukey_server))
-            shared_key = int(client_socket.recv(1024).decode())
-
-            print(data, end='')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-        # endregion
-
-        else:
-            print(data)
-            print('Enter a message to send to server: ')
-            message = input()
-            client_socket.send(encrypt_message(message, pukey_server))
-            if message == 'sign up' or message == 'login':
-                print('If you wanted to abort, type "exit()"')
-
-    client_socket.close()
-
-
 def get_client(client_socket):
     while True:
-        global last_nonce
+        global logged_in, last_nonce, username_login, private_key, dh_self
         data = client_socket.recv(1024).decode()
 
         # if last_nonce != data.split("||")[1]:
@@ -178,21 +66,59 @@ def get_client(client_socket):
                 print(mess)
         # endregion
 
-        # region logout
+        # region logout        
         elif data.startswith('logout'):
             mess = data[data.find("|") + 1:]
-            if (mess.startswith('you logged out successfully')):
+            if mess.startswith('you logged out successfully'):
                 logged_in = False
             print(mess)
         # endregion
-
+        
         # region online users
         elif data.startswith('online-users'):
             mess = data[data.find("|") + 1:]
             print(mess)
         # endregion
 
-        # region private message
+        # region private-connection
+        elif data.startswith('private-connect'):
+            mess = data[data.find("|") + 1:]
+            if mess.startswith('This username does not exist'):
+                print(mess)
+            elif mess.startswith('This user is not online'):
+                print(mess)
+            elif (mess.startswith('You can now chat')):
+                print(mess)
+            else:
+                if mess.startswith("DH"): # DH {des_username} public key: {des_user[2]}
+                    public_key_destination_string = mess.split("public key: ")[1].strip()
+                    public_key_destination = rsa.PublicKey.load_pkcs1(public_key_destination_string.encode())
+
+                    dh_self = pyDH.DiffieHellman(5)
+                    dh_self_pubkey = dh_self.gen_public_key()
+
+                    encrypted_key = encrypt_message(str(dh_self_pubkey), public_key_destination)
+                    print("encrypted_key: ", encrypted_key)
+                    # print("type encrypted_key.decode(): ", type(encrypted_key.decode()))
+                    client_socket.send(encrypt_message_byte(b'forward to ' + mess.split()[1].encode() + b' session ' + encrypted_key, pukey_server))
+                    # TODO  
+
+        # endregion
+
+        # region forward
+        elif data.startswith('forward'): # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
+            mess = data[data.find("|") + 1:]
+            pr_key = rsa.PrivateKey.load_pkcs1(open(f"prkeys/{username_login}.pem", "rb").read())
+            if mess.startswith("session"):
+                decrypt_end_user_diffie = decrypt_cipher(mess[mess.find(':') + 2:], pr_key)
+                d1_sharedkey = dh_self.gen_shared_key(int(decrypt_end_user_diffie))
+                print(f"{username_login}: ", d1_sharedkey)
+                sessions[mess.split()[1]] = d1_sharedkey
+            else:
+                print(mess)
+        # endregion
+
+        # region send message
         elif data.startswith('send-private-message'):
             # TODO
             splitted_data = data.split()
@@ -204,29 +130,27 @@ def get_client(client_socket):
             else:
                 pass
         # endregion
-
-        # region create group
+        
+         # region send message
         elif data.startswith('create-group'):
             # TODO
             mess = data[data.find("|"):]
         # endregion
 
-        # region group message
         elif data.startswith('send-group-message'):
             # TODO
             splitted_data = data.split()
             mess = data[data.find("|"):]
-        # endregion
 
 
 def send_client(client_socket):
-    global logged_in, public_key, private_key
+    global logged_in, public_key, private_key, des_username
     while True:
         message = input()
         # nonce = gen_nonce()
         if message.lower() == 'end':
             break
-
+        
         # region Sign Up
         if message.startswith("signup"):  # signup username password pubkey nonce
             public_key, private_key = rsa.newkeys(512)
@@ -235,7 +159,7 @@ def send_client(client_socket):
             new_message = message + " " + pubkey_str
             client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
-
+        
         # region Login
         elif message.startswith("login"):
             if logged_in:
@@ -243,17 +167,27 @@ def send_client(client_socket):
             else:
                 client_socket.send(encrypt_message(message, pukey_server))
         # endregion
-
+        
         # region logout
         elif message == "logout":
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
 
-        # region online users
+        # region online-users
         elif message.startswith("online-users"):
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
 
+        # region connect-to-another-user
+        elif message.startswith('private-connect'):  # private-connect username
+            if logged_in == False:
+                print("You are not logged in!")
+            else:
+                splitted_message = message.split()
+                des_username = splitted_message[1]
+                client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+        
         # region private message
         elif message.startswith('send-private-message'):  # send-private-message username "message"
             splitted_message = message.split()
@@ -263,22 +197,15 @@ def send_client(client_socket):
             client_socket.send(encrypt_message(message, pukey_server))
         # endregion
 
-        # region create group
         elif message.startswith('create-group'):  # create-group group-name
             # TODO
             pass
-        # endregion
-
-        # region group message
         elif message.startswith('send-group-message'):  # send-group-message group-name "message"
             splitted_message = message.split()
             des_groupname = splitted_message[1]
             index = message.find('\"')
             plain_message = message[index:-1]
             client_socket.send(encrypt_message(message, pukey_server))
-        # endregion
-
-        # region group message
         elif message.startswith("get-user-messages"):  # get-message username
             temp_username = message.split()[1]
             if logged_in:
@@ -288,9 +215,7 @@ def send_client(client_socket):
                 print("You are not logged in!")
             # TODO show messages from temp_username from client db
             pass
-        # endregion
 
-        # region get private messages
         elif message == "get-all-private-messages":
             # TODO show all the messages from client db
             if logged_in:
@@ -298,7 +223,14 @@ def send_client(client_socket):
             else:
                 print("You are not logged in!")
             pass
-        # endregion
+
+        elif message == "get-all-private-messages":
+            # TODO show all the messages from client db
+            if logged_in:
+                get_all_private_messages(db, username_login)
+            else:
+                print("You are not logged in!")
+            pass
 
         else:
             print("Invalid command!")
@@ -311,7 +243,6 @@ def start_client():
     port = 12345
 
     client_socket.connect((host, port))
-    # merge_client()
 
     # TODO new code
     get_thread = threading.Thread(target=get_client, args=(client_socket,))
