@@ -1,16 +1,20 @@
 import socket
 import os
+import sqlite3
 import threading
 from random import random
 
 import rsa
 from utils import encrypt_message, decrypt_cipher, calculate_key
+from database_methods import get_user_messages, get_all_private_messages, get_group_message
 
 logged_in = False
 username_register = ''
 username_login = ''
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 
+db = sqlite3.connect('client.db')
+db.execute("PRAGMA foreign_keys = ON")
 
 def merge_client():
     logged_in = False
@@ -204,6 +208,32 @@ def send_thread(client_socket):
             index = message.find('\"')
             plain_message = message[index:-1]
             client_socket.send(encrypt_message(message, pukey_server))
+        elif message.startswith("get-user-messages"):  # get-message username
+            temp_username = message.split()[1]
+            if logged_in:
+                # TODO check temp_username `exist
+                get_user_messages(db, username_login, temp_username)
+            else:
+                print("You are not logged in!")
+            # TODO show messages from temp_username from client db
+            pass
+
+        elif message == "get-all-private-messages":
+            # TODO show all the messages from client db
+            if logged_in:
+                get_all_private_messages(db, username_login)
+            else:
+                print("You are not logged in!")
+            pass
+
+        elif message == "get-all-private-messages":
+            # TODO show all the messages from client db
+            if logged_in:
+                get_all_private_messages(db, username_login)
+            else:
+                print("You are not logged in!")
+            pass
+
         else:
             print("Invalid command!")
 
