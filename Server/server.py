@@ -153,7 +153,7 @@ def handle_client(client_socket, client_address):
             des_username = split_data[2]
             
             if is_logged_in:
-                if (split_data[3] == 'session'):
+                if split_data[3] == 'session':
                     if des_username in sockets:
                         sockets[des_username].send(f'forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode())
                         client_socket.send(f'private-connect|You can now chat with {des_username}'.encode())
@@ -177,14 +177,23 @@ def handle_client(client_socket, client_address):
                 if index == -1 or data.count('\"') != 2:
                     client_socket.send('send-private-message|Write the message in a correct format!'.encode())
                     continue
-                message = data[index:-1]
+                index2 = data.find('\"', index + 1)
+                encrypt_chat_message = data[index + 1:index2]
 
                 if check_user_exists(db, des_username):
                     # TODO send message to the second user and also show
-                    prime = generate_prime()
-                    base = random.randint(2, prime - 2)
-                    client_socket.send(str(prime).encode())
-                    client_socket.send(str(base).encode())
+                    des_user = get_user_info_with_username(db, des_username)
+                    if des_user[3] == 1:
+                        client_socket.send('send-private-message|The message has been sent successfully.'.encode())
+                        sockets[des_username].send(f'get-private-message|User:{logged_in_user} '
+                                                   f'- message:{encrypt_chat_message}'.encode())
+                    else:
+                        client_socket.send('send-private-message|This user is not online.'.encode())
+                        continue
+                    # prime = generate_prime()
+                    # base = random.randint(2, prime - 2)
+                    # client_socket.send(str(prime).encode())
+                    # client_socket.send(str(base).encode())
                 else:
                     client_socket.send('send-private-message|This username does not exist, try again.'.encode())
                     continue

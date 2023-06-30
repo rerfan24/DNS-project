@@ -9,6 +9,7 @@ import rsa
 from utils import *
 from database_methods import get_user_messages, get_all_private_messages, get_group_message
 
+from Client.utils import encrypt_message, decrypt_cipher, encrypt_message_byte
 
 logged_in = False
 dh_self = None
@@ -73,7 +74,7 @@ def get_client(client_socket):
                 logged_in = False
             print(mess)
         # endregion
-        
+
         # region online users
         elif data.startswith('online-users'):
             mess = data[data.find("|") + 1:]
@@ -87,10 +88,10 @@ def get_client(client_socket):
                 print(mess)
             elif mess.startswith('This user is not online'):
                 print(mess)
-            elif (mess.startswith('You can now chat')):
+            elif mess.startswith('You can now chat'):
                 print(mess)
             else:
-                if mess.startswith("DH"): # DH {des_username} public key: {des_user[2]}
+                if mess.startswith("DH"):  # DH {des_username} public key: {des_user[2]}
                     public_key_destination_string = mess.split("public key: ")[1].strip()
                     public_key_destination = rsa.PublicKey.load_pkcs1(public_key_destination_string.encode())
 
@@ -100,13 +101,16 @@ def get_client(client_socket):
                     encrypted_key = encrypt_message(str(dh_self_pubkey), public_key_destination)
                     print("encrypted_key: ", encrypted_key)
                     # print("type encrypted_key.decode(): ", type(encrypted_key.decode()))
-                    client_socket.send(encrypt_message_byte(b'forward to ' + mess.split()[1].encode() + b' session ' + encrypted_key, pukey_server))
+                    client_socket.send(
+                        encrypt_message_byte(b'forward to ' + mess.split()[1].encode() + b' session ' + encrypted_key,
+                                             pukey_server))
                     # TODO  
 
         # endregion
 
         # region forward
-        elif data.startswith('forward'): # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
+        elif data.startswith(
+                'forward'):  # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
             mess = data[data.find("|") + 1:]
             pr_key = rsa.PrivateKey.load_pkcs1(open(f"prkeys/{username_login}.pem", "rb").read())
             if mess.startswith("session"):
@@ -120,18 +124,27 @@ def get_client(client_socket):
 
         # region send message
         elif data.startswith('send-private-message'):
-            # TODO
-            splitted_data = data.split()
-            mess = data[data.find("|"):]
+            mess = data[data.find("|") + 1:]
             if mess.startswith('This user is not online'):
-                pass
+                print(mess)
             elif mess.startswith('This username does not exist'):
-                pass
+                print(mess)
             else:
-                pass
+                print(mess)
         # endregion
-        
-         # region send message
+
+        # region send message
+        elif data.startswith('get-private-message'):  # f'get-private-message|User:{logged_in_user} - message:{
+            # encrypt_chat_message}'
+            index = data.find(":")
+            index2 = data.find(':', index + 1)
+            username_des = data[index + 1:].split()[0].strip()
+            encrypted_message = data[index2 + 1:]
+            decrypted_message = decrypt_cipher(encrypted_message, sessions[username_des])
+            print(f"Message from {username_des}: {decrypted_message}")
+        # endregion
+
+        # region create group
         elif data.startswith('create-group'):
             # TODO
             mess = data[data.find("|"):]
@@ -150,7 +163,7 @@ def send_client(client_socket):
         # nonce = gen_nonce()
         if message.lower() == 'end':
             break
-        
+
         # region Sign Up
         if message.startswith("signup"):  # signup username password pubkey nonce
             public_key, private_key = rsa.newkeys(512)
@@ -159,7 +172,7 @@ def send_client(client_socket):
             new_message = message + " " + pubkey_str
             client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
-        
+
         # region Login
         elif message.startswith("login"):
             if logged_in:
@@ -167,7 +180,7 @@ def send_client(client_socket):
             else:
                 client_socket.send(encrypt_message(message, pukey_server))
         # endregion
-        
+
         # region logout
         elif message == "logout":
             client_socket.send(encrypt_message(message, pukey_server))
@@ -187,14 +200,20 @@ def send_client(client_socket):
                 des_username = splitted_message[1]
                 client_socket.send(encrypt_message(message, pukey_server))
         # endregion
-        
+
         # region private message
         elif message.startswith('send-private-message'):  # send-private-message username "message"
             splitted_message = message.split()
             des_username = splitted_message[1]
             index = message.find('\"')
-            plain_message = message[index + 1:-1]
-            client_socket.send(encrypt_message(message, pukey_server))
+            index2 = message.find('\"', index + 1)
+            plain_message = message[index + 1:index2]
+            if des_username in sessions:
+                encrypted_message = encrypt_message(plain_message, sessions[des_username])
+                concat_message = "send-private-message " + des_username + ' \"' + encrypted_message + '\"'
+                client_socket.send(encrypt_message(concat_message, pukey_server))
+            else:
+                print(f"You are not connected to {des_username}")
         # endregion
 
         elif message.startswith('create-group'):  # create-group group-name
