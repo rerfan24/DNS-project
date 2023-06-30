@@ -28,7 +28,7 @@ cursor.execute('''
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS groups_messages(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group TEXT NOT NULL,
+        group_name TEXT NOT NULL,
         sender TEXT NOT NULL,
         message TEXT NOT NULL
     );

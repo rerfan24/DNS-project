@@ -60,7 +60,7 @@ def get_online_users(db: sqlite3.Connection):
 def insert_group(db: sqlite3.Connection, name: str, admin: str, session_key: str, online_users: str, hosts: str, ports: str):
     cursor = db.cursor()
     cursor.execute('''
-           INSERT INTO groups(name, admins, usernames, session_key, online_users, hosts, ports)
+           INSERT INTO groups(group_name, admins, usernames, session_key, online_users, hosts, ports)
            VALUES(?, ?, ?, ?, ?, ?)
        ''', ({name}, f'{admin},', f'{admin},', session_key, f'{online_users},', f'{hosts},', f'{ports},'))
     db.commit()
@@ -69,7 +69,7 @@ def insert_group(db: sqlite3.Connection, name: str, admin: str, session_key: str
 def get_group_info_with_name(db: sqlite3.Connection, name:str):
     cursor = db.cursor()
     cursor.execute('''
-       SELECT * FROM groups WHERE name = ? 
+       SELECT * FROM groups WHERE group_name = ? 
     ''', (name,))
     if cursor.fetchone() is None:
         return -1
@@ -87,7 +87,7 @@ def add_user_to_group(db: sqlite3.Connection, group_name: str, new_user: str, ne
     cursor = db.cursor()
 
     cursor.execute('''
-            UPDATE groups SET session_key = ?, usernames = ?, online_users = ?, hosts = ?, ports = ? WHERE name = ?
+            UPDATE groups SET session_key = ?, usernames = ?, online_users = ?, hosts = ?, ports = ? WHERE group_name = ?
         ''', (new_session_key, f'{last_usernames}{new_user},', f'{last_onlines}{new_user}',
                    f'{last_hosts}{new_host}', f'{last_ports}{new_port},', group_name))
     db.commit()
@@ -105,7 +105,7 @@ def remove_user_from_group(db: sqlite3.Connection, group_name: str, username: st
     cursor = db.cursor()
 
     cursor.execute('''
-                UPDATE groups SET session_key = ?, usernames = ?, online_users = ?, hosts = ?, ports = ? WHERE name = ?
+                UPDATE groups SET session_key = ?, usernames = ?, online_users = ?, hosts = ?, ports = ? WHERE group_name = ?
             ''', (new_session_key, group_users, group_onlines,
                   group_hosts, group_ports, group_name))
 
