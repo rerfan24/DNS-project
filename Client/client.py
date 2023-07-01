@@ -19,23 +19,31 @@ public_key = ''
 private_key = ''
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 last_nonce = ''
-
 sessions = {}
 
 db = sqlite3.connect('client.db')
 db.execute("PRAGMA foreign_keys = ON")
 
 
+def add_nonce(string, nonce):
+    return str(string + '||' + nonce)
+
+
 def get_client(client_socket):
     while True:
         global logged_in, last_nonce, username_login, private_key, dh_self, sessions
         data = client_socket.recv(1024).decode()
+        # print('data:', data)
+        get_nonce = data.split("||")[1]
+        # print('get nonce:', get_nonce)
+        # print('last nonce:', last_nonce)
 
-        # if last_nonce != data.split("||")[1]:
-        #     print("The message is not secure. Invalid nonce!")
-        #     continue
+        if last_nonce != get_nonce:
+            print("The message is not secure. Invalid nonce!")
+            continue
 
         # region Sign Up
+        data = data.split('||')[0]
         if data.startswith('signup'):
             mess = data[data.find("|") + 1:]
             if mess.startswith("Successfully"):  # Successfully, user {username} signed up
@@ -69,7 +77,7 @@ def get_client(client_socket):
 
         # region logout        
         elif data.startswith('logout'):
-            global sessions
+            # global sessions
             mess = data[data.find("|") + 1:]
             if mess.startswith('you logged out successfully'):
                 sessions = {}
@@ -113,7 +121,7 @@ def get_client(client_socket):
         # region forward
         elif data.startswith(
                 'forward'):  # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
-            global sessions
+            # global sessions
             mess = data[data.find("|") + 1:]
             pr_key = rsa.PrivateKey.load_pkcs1(open(f"prkeys/{username_login}.pem", "rb").read())
             if mess.startswith("session"):
@@ -169,12 +177,17 @@ def get_client(client_socket):
             mess = data[data.find("|") + 1:]
         # endregion
 
+        # else:
+            # print(data)
 
 def send_client(client_socket):
     global logged_in, public_key, private_key, des_username
     while True:
         message = input()
-        # nonce = gen_nonce()
+        nonce = gen_nonce()
+        global last_nonce
+        last_nonce = nonce
+        # print("send nonce:", nonce)
         if message.lower() == 'end':
             break
 
@@ -182,8 +195,8 @@ def send_client(client_socket):
         if message.startswith("signup"):  # signup username password pubkey nonce
             public_key, private_key = rsa.newkeys(512)
             pubkey_str = public_key.save_pkcs1().decode()
-            # new_message = message + " " + pubkey_str + " " + nonce
-            new_message = message + " " + pubkey_str
+            # new_message = message + "||" + pubkey_str + "||" + nonce
+            new_message = add_nonce(message + "||" + pubkey_str, nonce)
             client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
@@ -192,17 +205,20 @@ def send_client(client_socket):
             if logged_in:
                 print("You have already Logged in.")
             else:
-                client_socket.send(encrypt_message(message, pukey_server))
+                new_message = add_nonce(message, nonce)
+                client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
         # region logout
         elif message == "logout":
-            client_socket.send(encrypt_message(message, pukey_server))
+            new_message = add_nonce(message, nonce)
+            client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
         # region online-users
         elif message.startswith("online-users"):
-            client_socket.send(encrypt_message(message, pukey_server))
+            new_message = add_nonce(message, nonce)
+            client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
         # region connect-to-another-user
@@ -212,7 +228,8 @@ def send_client(client_socket):
             else:
                 splitted_message = message.split()
                 des_username = splitted_message[1]
-                client_socket.send(encrypt_message(message, pukey_server))
+                new_message = add_nonce(message, nonce)
+                client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
         # region private message

@@ -1,7 +1,7 @@
 import hashlib
 import os
 import string
-from random import random
+import random
 
 import rsa
 import socket
@@ -11,7 +11,8 @@ def random_string(size: int) -> str:
     characters = string.ascii_letters
     characters += string.digits
     characters += string.punctuation
-    return ''.join(random.choice(characters) for _ in range(size))
+    characters = characters.replace("|", '')
+    return ''.join(random.choices(characters, k=64))
 
 
 def encrypt_message(message: str, public_key: rsa.PublicKey):
