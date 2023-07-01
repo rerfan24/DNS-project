@@ -28,7 +28,7 @@ db.execute("PRAGMA foreign_keys = ON")
 
 def get_client(client_socket):
     while True:
-        global logged_in, last_nonce, username_login, private_key, dh_self
+        global logged_in, last_nonce, username_login, private_key, dh_self, sessions
         data = client_socket.recv(1024).decode()
 
         # if last_nonce != data.split("||")[1]:
@@ -69,8 +69,10 @@ def get_client(client_socket):
 
         # region logout        
         elif data.startswith('logout'):
+            global sessions
             mess = data[data.find("|") + 1:]
             if mess.startswith('you logged out successfully'):
+                sessions = {}
                 logged_in = False
             print(mess)
         # endregion
@@ -111,6 +113,7 @@ def get_client(client_socket):
         # region forward
         elif data.startswith(
                 'forward'):  # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
+            global sessions
             mess = data[data.find("|") + 1:]
             pr_key = rsa.PrivateKey.load_pkcs1(open(f"prkeys/{username_login}.pem", "rb").read())
             if mess.startswith("session"):
@@ -133,7 +136,7 @@ def get_client(client_socket):
                 print(mess)
         # endregion
 
-        # region send message
+        # region get message
         elif data.startswith('get-private-message'):  # f'get-private-message|User:{logged_in_user} - message:{
             # encrypt_chat_message}'
             index = data.find(":")
@@ -146,14 +149,25 @@ def get_client(client_socket):
 
         # region create group
         elif data.startswith('create-group'):
-            # TODO
-            mess = data[data.find("|"):]
+            mess = data[data.find("|") + 1:]
+            if mess.startswith("Group has been created successfully"):
+                print(mess)
+            else:
+                print(mess)
         # endregion
 
+        # region create group
+        elif data.startswith('add-member'):
+            mess = data[data.find("|") + 1:]
+            print(mess)
+        # endregion
+
+        # region send a group message
         elif data.startswith('send-group-message'):
             # TODO
             splitted_data = data.split()
-            mess = data[data.find("|"):]
+            mess = data[data.find("|") + 1:]
+        # endregion
 
 
 def send_client(client_socket):
@@ -193,7 +207,7 @@ def send_client(client_socket):
 
         # region connect-to-another-user
         elif message.startswith('private-connect'):  # private-connect username
-            if logged_in == False:
+            if not logged_in:
                 print("You are not logged in!")
             else:
                 splitted_message = message.split()
@@ -216,15 +230,40 @@ def send_client(client_socket):
                 print(f"You are not connected to {des_username}")
         # endregion
 
-        elif message.startswith('create-group'):  # create-group group-name
-            # TODO
-            pass
+        # region private message
+        elif message.startswith('create-group'):  # create-group group_name username1 username2 ...
+            if not logged_in:
+                print("You are not logged in!")
+            else:
+                client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region get all private messages
+        elif message.startswith('add-member'):  # add-member group_name username1 username2 ...
+            if not logged_in:
+                print("You are not logged in!")
+            else:
+                client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region send group message
         elif message.startswith('send-group-message'):  # send-group-message group-name "message"
             splitted_message = message.split()
             des_groupname = splitted_message[1]
             index = message.find('\"')
-            plain_message = message[index:-1]
+            plain_message = message[index + 1:-1]
             client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region get group messages
+        elif message.startswith('get-group-messages'):  # get-group-messages group-name
+            if not logged_in:
+                print("You are not logged in!")
+            else:
+                client_socket.send(encrypt_message(message, pukey_server))
+        # endregion
+
+        # region get user messages
         elif message.startswith("get-user-messages"):  # get-message username
             temp_username = message.split()[1]
             if logged_in:
@@ -234,7 +273,9 @@ def send_client(client_socket):
                 print("You are not logged in!")
             # TODO show messages from temp_username from client db
             pass
+        # endregion
 
+        # region get all private messages
         elif message == "get-all-private-messages":
             # TODO show all the messages from client db
             if logged_in:
@@ -242,14 +283,7 @@ def send_client(client_socket):
             else:
                 print("You are not logged in!")
             pass
-
-        elif message == "get-all-private-messages":
-            # TODO show all the messages from client db
-            if logged_in:
-                get_all_private_messages(db, username_login)
-            else:
-                print("You are not logged in!")
-            pass
+        # endregion
 
         else:
             print("Invalid command!")
@@ -263,13 +297,11 @@ def start_client():
 
     client_socket.connect((host, port))
 
-    # TODO new code
     get_thread = threading.Thread(target=get_client, args=(client_socket,))
     get_thread.start()
 
     send_thread = threading.Thread(target=send_client, args=(client_socket,))
     send_thread.start()
-    # TODO new code
 
 
 if __name__ == '__main__':

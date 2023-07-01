@@ -16,6 +16,7 @@ from database_methods import check_user_password, insert_user, check_user_exists
     get_online_users, get_user_info_with_username
 
 sockets = {}
+groups = {}
 
 
 def handle_client(client_socket, client_address):
@@ -137,8 +138,9 @@ def handle_client(client_socket, client_address):
                         client_socket.send(f'private-connect|DH {des_username} public key: {des_user[2]}'.encode())
 
                         if current_user != -1:
-                            sockets[des_username].send(f'private-connect|DH {logged_in_user} public key: {current_user[2]}'.encode())
-                        
+                            sockets[des_username].send(
+                                f'private-connect|DH {logged_in_user} public key: {current_user[2]}'.encode())
+
                     else:
                         client_socket.send('private-connect|This user is not online.'.encode())
 
@@ -151,11 +153,12 @@ def handle_client(client_socket, client_address):
         elif command == 'forward':
             split_data = data.split()
             des_username = split_data[2]
-            
+
             if is_logged_in:
                 if split_data[3] == 'session':
                     if des_username in sockets:
-                        sockets[des_username].send(f'forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode())
+                        sockets[des_username].send(
+                            f'forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode())
                         client_socket.send(f'private-connect|You can now chat with {des_username}'.encode())
                     else:
                         client_socket.send('forward|This user is not online.'.encode())
@@ -203,26 +206,71 @@ def handle_client(client_socket, client_address):
                 client_socket.send('send-private-message|You are not logged in'.encode())
         # endregion
 
+        # region create-group
         elif command == 'create-group':
             if is_logged_in:
-                source_username = logged_in_user
-                groupname = data.split()[1]
-
-                # TODO check if the group name does already exist
-                if check_user_exists(db, des_username):
-                    # TODO send message to the group and also show
-                    client_socket.send('send-group-message|This group already exists.'.encode())
+                group_name = data.split()[1]
+                if group_name in groups:
+                    client_socket.send('create-group|This group already exists.'.encode())
                     continue
-                    pass
                 else:
-                    # Create group
-                    pass
-                    continue
-
+                    members = [logged_in_user]
+                    flag = 0
+                    online_users_list = get_online_users(db)
+                    if len(data.split()) > 2:
+                        for mem in data.split()[2:]:
+                            if check_user_exists(db, mem) and mem in online_users_list:
+                                members.append(mem)
+                            else:
+                                flag = 1
+                                break
+                        if flag == 1:
+                            client_socket.send('create-group|All the users should be online!'.encode())
+                        else:
+                            groups[group_name] = members
+                            # TODO add to db
+                            client_socket.send('create-group|Group has been created successfully!'.encode())
+                    else:
+                        client_socket.send('create-group|A group has to contain at least two members!'.encode())
             else:
-                client_socket.send('send-group-message|You are not logged in'.encode())
+                client_socket.send('create-message|You are not logged in.'.encode())
+        # endregion
 
-        elif command == 'send-group-message':
+        # region add-member
+        elif command == 'add-member':  # add-member group_name username1 username2 ...
+            if is_logged_in:
+                group_name = data.split()[1]
+                if group_name not in groups:
+                    client_socket.send('add-member|This group does not exist.'.encode())
+                    continue
+                else:
+                    members = groups[group_name].copy()
+                    if members[0] == logged_in_user:
+                        flag = 0
+                        online_users_list = get_online_users(db)
+                        if len(data.split()) > 2:
+                            for mem in data.split()[2:]:
+                                if check_user_exists(db, mem) and mem in online_users_list:
+                                    members.append(mem)
+                                else:
+                                    flag = 1
+                                    break
+                            if flag == 1:
+                                client_socket.send('add-member|All the users should be online!'.encode())
+                            else:
+                                groups[group_name] = members
+                                # TODO add to db
+                                client_socket.send('add-member|The members added successfully.'.encode())
+                        else:
+                            client_socket.send('add-member|You have to add at least one member!'.encode())
+                    else:
+                        client_socket.send('add-member|You have to be admin to add members.'.encode())
+            else:
+                client_socket.send('add-member|You are not logged in.'.encode())
+        # endregion
+
+        # region send group message
+        elif command == 'send-group-message':  # send-group-message group-name "message"
             if is_logged_in:
                 source_username = logged_in_user
                 des_username = data.split()[1]
@@ -230,7 +278,7 @@ def handle_client(client_socket, client_address):
                 if index == -1 or data.count('\"') != 2:
                     client_socket.send('send-group-message|Write the message in a correct format!'.encode())
                     continue
-                message = data[index:-1]
+                message = data[index + 1:-1]
 
                 # TODO check if the group name does already exist
                 if check_user_exists(db, des_username):
@@ -249,6 +297,7 @@ def handle_client(client_socket, client_address):
 
             response = 'Message received: {}'.format(data)
             client_socket.send(response.encode())
+        # endregion
 
         # TODO new code according to two threads in client
         # # region Send Message
@@ -273,7 +322,6 @@ def handle_client(client_socket, client_address):
         #     else:
         #         client_socket.send('You are not logged in'.encode())
         # # endregion
-        
 
     client_socket.close()
     print('Client {} disconnected'.format(client_address))
