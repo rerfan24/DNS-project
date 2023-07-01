@@ -19,6 +19,10 @@ sockets = {}
 groups = {}
 
 
+def add_nonce(string, nonce):
+    return str(string + '||' + nonce)
+
+
 def handle_client(client_socket, client_address):
     old_nonce = ''
     db = sqlite3.connect('server.db')
@@ -32,27 +36,30 @@ def handle_client(client_socket, client_address):
         received_data = client_socket.recv(1024)
         data = decrypt_cipher(received_data, private_key)
         print("data: ", data)
+
         if not data:
             break
 
         # TODO new code according to two threads in client
-        command = data.split()[0]
-        split_data = data.split()
-        new_nonce = split_data[-1].strip()
+        command = data.split('||')[0]
+        print('command:', command)
+        split_data = command.split()
+        new_nonce = data.split('||')[-1].strip()
+        print("nonce:", new_nonce)
 
         # region signup
-        if command == 'signup':
+        if command.split()[0] == 'signup':
             username = split_data[1].strip()
             password = split_data[2].strip()
-            new_split = data.split("-----BEGIN RSA PUBLIC KEY-----")[0].strip()
+            # new_split = data.split("-----BEGIN RSA PUBLIC KEY-----")[0].strip()
             if username == 'exit()' or password == 'exit()':
                 break
-            if len(new_split.split()) < 3:
-                client_socket.send('signup|Please enter both of username and password.'.encode())
-            elif len(new_split.split()) > 3:
-                client_socket.send('signup|Username and password cannot contain spaces!'.encode())
+            if len(split_data) < 3:
+                client_socket.send(add_nonce('signup|Please enter both of username and password.', new_nonce).encode())
+            elif len(split_data) > 3:
+                client_socket.send(add_nonce('signup|Username and password cannot contain spaces!', new_nonce).encode())
             elif check_user_exists(db, username):
-                client_socket.send('signup|This username already exists.'.encode())
+                client_socket.send(add_nonce('signup|This username already exists.', new_nonce).encode())
             else:
                 user_public_key_string = data[data.find("-----BEGIN RSA PUBLIC KEY-----"):].strip()
                 user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
@@ -61,76 +68,76 @@ def handle_client(client_socket, client_address):
 
                 insert_user(db, username, password, user_public_key, False, client_address[0], client_address[1])
 
-                client_socket.send(f'signup|Successfully, user {username} signed up'.encode())
+                client_socket.send(add_nonce(f'signup|Successfully, user {username} signed up', new_nonce).encode())
                 # print(f'signup|Successfully, user {username} signed up||{new_nonce}')
         # endregion
 
         # region login
-        elif command == 'login':
-            split_data = data.split()
+        elif command.split()[0] == 'login':
+            split_data = command.split()
             username = split_data[1].strip()
             password = split_data[2].strip()
             if username == 'exit()' or password == 'exit()':
                 break
             if len(split_data) < 3:
-                client_socket.send('login|Please enter both of username and password.'.encode())
+                client_socket.send(add_nonce('login|Please enter both of username and password.', new_nonce).encode())
             elif len(split_data) > 3:
-                client_socket.send('login|Username and password cannot contain spaces!'.encode())
+                client_socket.send(add_nonce('login|Username and password cannot contain spaces!', new_nonce).encode())
             elif logged_in_user:
-                client_socket.send('login|You have already logged in!'.encode())
+                client_socket.send(add_nonce('login|You have already logged in!', new_nonce).encode())
             else:
                 password = hashlib.sha256(password.encode()).hexdigest()
                 if check_user_password(db, username, password):
                     update_user_login_status(db, username, True, client_address[0], client_address[1])
                     is_logged_in = True
                     logged_in_user = username
-                    client_socket.send(f'login|you logged in successfully as {username}'.encode())
+                    client_socket.send(add_nonce(f'login|you logged in successfully as {username}', new_nonce).encode())
                     sockets[username] = client_socket
                     print(f'User {username} logged in')
                 else:
-                    client_socket.send('login|Wrong username or password, try again!'.encode())
+                    client_socket.send(add_nonce('login|Wrong username or password, try again!', new_nonce).encode())
         # endregion
 
         # region logout
-        elif command == 'logout':
+        elif command.split()[0] == 'logout':
             if len(split_data) > 1:
-                client_socket.send('logout|You cannot enter anything after logout command'.encode())
+                client_socket.send(add_nonce('logout|You cannot enter anything after logout command', new_nonce).encode())
                 continue
             if is_logged_in:
                 update_user_login_status(db, logged_in_user, False, client_address[0], client_address[1])
-                client_socket.send('logout|you logged out successfully'.encode())
+                client_socket.send(add_nonce('logout|you logged out successfully', new_nonce).encode())
                 print(f'User {logged_in_user} logged out')
                 del sockets[logged_in_user]
                 is_logged_in = False
                 logged_in_user = ''
             else:
-                client_socket.send('logout|You are not logged in'.encode())
+                client_socket.send(add_nonce('logout|You are not logged in', new_nonce).encode())
                 continue
         # endregion
 
         # region online-users
-        elif command == 'online-users':
+        elif command.split()[0] == 'online-users':
             if is_logged_in:
                 online_users_list = get_online_users(db)
                 if len(online_users_list) == 0:
-                    client_socket.send('online-users|There are no online users'.encode())
+                    client_socket.send(add_nonce('online-users|There are no online users', new_nonce).encode())
                 online_users_str = "online-users|These are the online users:\n"
                 for i in online_users_list:
                     online_users_str += i + '\n'
                 online_users_str = online_users_str[:-1]
-                client_socket.send(online_users_str.encode())
+                client_socket.send(add_nonce(online_users_str, new_nonce).encode())
             else:
-                client_socket.send('online-users|Only logged in users can see other online users'.encode())
+                client_socket.send(add_nonce('online-users|Only logged in users can see other online users', new_nonce).encode())
         # endregion
 
         # region private-connection
-        elif command == 'private-connect':
+        elif command.split()[0] == 'private-connect':
             split_data = data.split()
             des_username = split_data[1]
             if is_logged_in:
                 des_user = get_user_info_with_username(db, des_username)
                 if des_user == -1:
-                    client_socket.send('private-connect|This username does not exist.'.encode())
+                    client_socket.send(add_nonce('private-connect|This username does not exist.', new_nonce).encode())
                 else:
                     if des_user[3] == 1:
                         print("Creating DH!")
@@ -140,18 +147,20 @@ def handle_client(client_socket, client_address):
                         # client_socket.send()
                         # client_socket.send()
 
-                        client_socket.send(f'private-connect|DH {des_username} prime: {str(prime)} alpha: {str(base)} public key: {des_user[2]}'.encode())
+                        client_socket.send(add_nonce(f'private-connect|DH {des_username} public key: {des_user[2]}'
+                                                               , new_nonce).encode())
 
                         if current_user != -1:
                             sockets[des_username].send(
-                                f'private-connect|DH {logged_in_user} prime: {str(prime)} alpha: {str(base)} public key: {current_user[2]}'.encode())
+                                add_nonce(f'private-connect|DH {logged_in_user} public key: {current_user[2]}'
+                                    , new_nonce).encode())
 
                     else:
-                        client_socket.send('private-connect|This user is not online.'.encode())
+                        client_socket.send(add_nonce('private-connect|This user is not online.', new_nonce).encode())
 
 
             else:
-                client_socket.send('private-connect|Only logged in users can connect to other users'.encode())
+                client_socket.send(add_nonce('private-connect|Only logged in users can connect to other users', new_nonce).encode())
         # endregion
 
         # region forward-message
