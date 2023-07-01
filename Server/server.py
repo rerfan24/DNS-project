@@ -1,7 +1,7 @@
 import socket
 import threading
 from random import random
-
+from utils import *
 import rsa
 import sqlite3
 import hashlib
@@ -33,18 +33,42 @@ def handle_client(client_socket, client_address):
     private_key = rsa.PrivateKey.load_pkcs1(open('prkey_server.pem', 'rb').read())
 
     while True:
-        data = decrypt_cipher(client_socket.recv(1024), private_key)
+        data_in = ''
+        data_out = ''
+        data = client_socket.recv(1024)
+        if data.__contains__(b'----------'):
+            print("in")
+            data_in = data
+            enc_nonce, sign = data_in.split(b'----------')[0], data_in.split(b'----------')[1]
+            command = decrypt_cipher(enc_nonce, private_key).split('||')[0].strip()
+            print('in command:', command)
+            split_data = command.split()
+            new_nonce = decrypt_cipher(enc_nonce, private_key).split('||')[-1].strip()
+            print("in nonce:", new_nonce)
+            integrity_check = check_sign(command, sign, user_public_key)
+            print("Integrity check: ", integrity_check)
+
+        else:
+            print("out")
+            data_out = decrypt_cipher(data, private_key)
+            command = data_out.split('||')[0]
+            print('out command:', command)
+            split_data = command.split()
+            new_nonce = data_out.split('||')[-1].strip()
+            print("out nonce:", new_nonce)
         print("data: ", data)
 
         if not data:
             break
 
         # TODO new code according to two threads in client
-        command = data.split('||')[0]
-        print('command:', command)
-        split_data = command.split()
-        new_nonce = data.split('||')[-1].strip()
-        print("nonce:", new_nonce)
+
+
+
+
+
+
+
 
         # region signup
         if command.split()[0] == 'signup':
@@ -60,7 +84,7 @@ def handle_client(client_socket, client_address):
             elif check_user_exists(db, username):
                 client_socket.send(add_nonce('signup|This username already exists.', new_nonce).encode())
             else:
-                user_public_key_string = data[data.find("-----BEGIN RSA PUBLIC KEY-----"):].strip()
+                user_public_key_string = data_out[data_out.find("-----BEGIN RSA PUBLIC KEY-----"):].strip()
                 user_public_key = rsa.PublicKey.load_pkcs1(user_public_key_string.encode())
 
                 password = hashlib.sha256(password.encode()).hexdigest()
@@ -103,6 +127,7 @@ def handle_client(client_socket, client_address):
                 client_socket.send(add_nonce('logout|You cannot enter anything after logout command', new_nonce).encode())
                 continue
             if is_logged_in:
+                # check_integrity_and_freshness(data, receiver_private_key= private_key, last_nonce= non, sender_public_key= )
                 update_user_login_status(db, logged_in_user, False, client_address[0], client_address[1])
                 client_socket.send(add_nonce('logout|you logged out successfully', new_nonce).encode())
                 print(f'User {logged_in_user} logged out')

@@ -15,18 +15,14 @@ logged_in = False
 dh_self = None
 username_register = ''
 username_login = ''
-public_key = ''
-private_key = ''
+public_key: rsa.PublicKey
+private_key: rsa.PrivateKey
 pukey_server = rsa.PublicKey.load_pkcs1(open('../PublicKeys/pukey_server.pem', 'rb').read())
 last_nonce = ''
 sessions = {}
 
 db = sqlite3.connect('client.db')
 db.execute("PRAGMA foreign_keys = ON")
-
-
-def add_nonce(string, nonce):
-    return str(string + '||' + nonce)
 
 
 def get_client(client_socket):
@@ -38,9 +34,13 @@ def get_client(client_socket):
         # print('get nonce:', get_nonce)
         # print('last nonce:', last_nonce)
 
-        if last_nonce != get_nonce:
+        freshness_check = last_nonce == get_nonce
+
+        if not freshness_check:
             print("The message is not secure. Invalid nonce!")
             continue
+        else:
+            print("Freshness check:", freshness_check)
 
         # region Sign Up
         data = data.split('||')[0]
@@ -180,6 +180,7 @@ def get_client(client_socket):
         # else:
             # print(data)
 
+
 def send_client(client_socket):
     global logged_in, public_key, private_key, des_username
     while True:
@@ -205,21 +206,30 @@ def send_client(client_socket):
             if logged_in:
                 print("You have already Logged in.")
             else:
+
                 new_message = add_nonce(message, nonce)
                 client_socket.send(encrypt_message(new_message, pukey_server))
         # endregion
 
         # region logout
         elif message == "logout":
-            new_message = add_nonce(message, nonce)
-            client_socket.send(encrypt_message(new_message, pukey_server))
+            if logged_in:
+                new_message = enc_nonce_sign(message=message, receiver_public_key=pukey_server, nonce=nonce,
+                                             sender_private_key=private_key)
+                client_socket.send(new_message)
+            else:
+                print('logout|You are not logged in')
         # endregion
 
         # region online-users
         elif message.startswith("online-users"):
-            new_message = add_nonce(message, nonce)
-            client_socket.send(encrypt_message(new_message, pukey_server))
-        # endregion
+            if logged_in:
+                new_message = enc_nonce_sign(message=message, receiver_public_key=pukey_server, nonce=nonce,
+                                             sender_private_key=private_key)
+                client_socket.send(new_message)
+                # endregion
+            else:
+                print('logout|You are not logged in')
 
         # region connect-to-another-user
         elif message.startswith('private-connect'):  # private-connect username
