@@ -1,40 +1,41 @@
 import rsa
 import os
 import sqlite3
+import sys
 
-db = sqlite3.connect('client.db')
-db.execute('PRAGMA foreign_keys = ON')
-cursor = db.cursor()
+def initialize_db(username: str):
+    db = sqlite3.connect(f'client-{username}.db')
+    db.execute('PRAGMA foreign_keys = ON')
+    cursor = db.cursor()
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS messages(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sender TEXT NOT NULL,
-        receiver TEXT NOT NULL,
-        message TEXT NOT NULL
-    );
-''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messages(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender TEXT NOT NULL,
+            receiver TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+    ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS groups_info(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name TEXT NOT NULL,
+            usernames TEXT NOT NULL,
+            admins TEXT NOT NULL
+        );
+    ''')
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS groups_info(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_name TEXT NOT NULL,
-        usernames TEXT NOT NULL,
-        admins TEXT NOT NULL
-    );
-''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS groups_messages(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_name TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+    ''')
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS groups_messages(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_name TEXT NOT NULL,
-        sender TEXT NOT NULL,
-        message TEXT NOT NULL
-    );
-''')
-
-db.commit()
+    db.commit()
 
 # if os.path.exists("pukey_client.pem") and os.path.exists("prkey_client.pem"):
 #     exit()

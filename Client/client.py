@@ -6,13 +6,14 @@ from random import random
 import pyDH
 
 import rsa
-from utils import *
-from database_methods import get_user_messages, get_all_private_messages, get_group_message
 
-from Client.utils import encrypt_message, decrypt_cipher, encrypt_message_byte
+from utils import *
+from database_methods import *
+from client_config import *
 
 logged_in = False
-dh_self = None
+X = 0
+q = 0
 username_register = ''
 username_login = ''
 public_key = ''
@@ -22,14 +23,17 @@ last_nonce = ''
 
 sessions = {}
 
-db = sqlite3.connect('client.db')
-db.execute("PRAGMA foreign_keys = ON")
-
-
 def get_client(client_socket):
+    db: sqlite3.Connection
     while True:
-        global logged_in, last_nonce, username_login, private_key, dh_self, sessions
-        data = client_socket.recv(1024).decode()
+        global logged_in, last_nonce, username_login, private_key, dh_self, sessions, q, X
+        received_data = client_socket.recv(1024)
+        data = ''
+        dollar_index = received_data.find(b'$$$$')
+        if dollar_index == -1:
+            data = received_data.decode()
+        else:
+            data = received_data.split(b'$$$$')[0].decode()
 
         # if last_nonce != data.split("||")[1]:
         #     print("The message is not secure. Invalid nonce!")
@@ -63,13 +67,15 @@ def get_client(client_socket):
                 # successfully logged in as username
                 logged_in = True
                 username_login = splitted_data[-1]
+                initialize_db(username_login)
+                db = sqlite3.connect(f'client-{username_login}.db')
+                db.execute('''PRAGMA foreign_keys = ON''')
             else:
                 print(mess)
         # endregion
 
         # region logout        
         elif data.startswith('logout'):
-            global sessions
             mess = data[data.find("|") + 1:]
             if mess.startswith('you logged out successfully'):
                 sessions = {}
@@ -93,58 +99,82 @@ def get_client(client_socket):
             elif mess.startswith('You can now chat'):
                 print(mess)
             else:
-                if mess.startswith("DH"):  # DH {des_username} public key: {des_user[2]}
+                if mess.startswith("DH"):  # DH {des_username} prime: {str(prime)} alpha: {str(base)} public key: {des_user[2]}
                     public_key_destination_string = mess.split("public key: ")[1].strip()
                     public_key_destination = rsa.PublicKey.load_pkcs1(public_key_destination_string.encode())
+                    prime_number = int(mess.split("prime: ")[1].split(" alpha: ")[0])
+                    base_number = int(mess.split("alpha: ")[1].split(" public key: ")[0])
+                    q = prime_number
 
-                    dh_self = pyDH.DiffieHellman(5)
-                    dh_self_pubkey = dh_self.gen_public_key()
+                    X = int(random() * prime_number)
+                    Y = int(calculate_key(base_number, X, prime_number))
+                    print("Y: ", Y)
 
-                    encrypted_key = encrypt_message(str(dh_self_pubkey), public_key_destination)
+                    encrypted_key = encrypt_message(str(Y), public_key_destination)
                     print("encrypted_key: ", encrypted_key)
+
+
+                    # dh_self = pyDH.DiffieHellman(5)
+                    # dh_self_pubkey = dh_self.gen_public_key()
+                    # encrypted_key = encrypt_message(str(dh_self_pubkey), public_key_destination)
+                    # print("encrypted_key: ", encrypted_key)
+
                     # print("type encrypted_key.decode(): ", type(encrypted_key.decode()))
                     client_socket.send(
-                        encrypt_message_byte(b'forward to ' + mess.split()[1].encode() + b' session ' + encrypted_key,
-                                             pukey_server))
+                        encrypt_message('forward to ' + mess.split()[1] + ' session ',pukey_server) + b'$$$$' + encrypted_key)
                     # TODO  
 
         # endregion
 
         # region forward
         elif data.startswith(
-                'forward'):  # forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode()
-            global sessions
+                'forward'):  # (f"forward|session {logged_in_user}: ".encode() + b'$$$$' + received_data.split(b'$$$$')[1].strip())
             mess = data[data.find("|") + 1:]
             pr_key = rsa.PrivateKey.load_pkcs1(open(f"prkeys/{username_login}.pem", "rb").read())
             if mess.startswith("session"):
-                decrypt_end_user_diffie = decrypt_cipher(mess[mess.find(':') + 2:], pr_key)
-                d1_sharedkey = dh_self.gen_shared_key(int(decrypt_end_user_diffie))
-                print(f"{username_login}: ", d1_sharedkey)
-                sessions[mess.split()[1]] = d1_sharedkey
+                print("session")
+                Y_destination = int(decrypt_cipher(received_data.split(b'$$$$')[1], pr_key))
+                d_sharedkey = calculate_key(Y_destination, X, q)
+                
+                # d1_sharedkey = dh_self.gen_shared_key(int(decrypt_end_user_diffie))s
+                print(f"{username_login}: ", d_sharedkey)
+                sessions[mess.split()[1][:-1]] = d_sharedkey
             else:
                 print(mess)
         # endregion
 
         # region send message
-        elif data.startswith('send-private-message'):
+        elif data.startswith('send-private-message'): # send-private-message|User:{des_username} message:{encrypt_chat_message}
             mess = data[data.find("|") + 1:]
-            if mess.startswith('This user is not online'):
-                print(mess)
-            elif mess.startswith('This username does not exist'):
-                print(mess)
+            if mess.startswith('User'):
+                print("Message has been sent successfully.")
+                sender = username_login
+                receiver = mess.split()[0].split(":")[1]
+                encrypt_chat_message = mess.split()[1].split(":")[1]
+                if receiver in sessions:
+                    plain_message = decrypt_cipher_symmetric(encrypt_chat_message, int(sessions[receiver]))
+                    insert_private_messages(db, sender, receiver, plain_message)
+                else:
+                    print(f"You are not connected to {receiver}!")
             else:
                 print(mess)
         # endregion
 
         # region get message
-        elif data.startswith('get-private-message'):  # f'get-private-message|User:{logged_in_user} - message:{
-            # encrypt_chat_message}'
-            index = data.find(":")
-            index2 = data.find(':', index + 1)
-            username_des = data[index + 1:].split()[0].strip()
-            encrypted_message = data[index2 + 1:]
-            decrypted_message = decrypt_cipher(encrypted_message, sessions[username_des])
-            print(f"Message from {username_des}: {decrypted_message}")
+        elif data.startswith('get-private-message'):  # get-private-message|User:{logged_in_user} message:{encrypt_chat_message}
+            mess = data[data.find("|") + 1:]
+            if mess.startswith('User'):
+                sender = mess.split()[0].split(":")[1]
+                receiver = username_login
+                encrypt_chat_message = mess.split()[1].split(":")[1]
+                if sender in sessions:
+                    plain_message = decrypt_cipher_symmetric(encrypt_chat_message, int(sessions[sender]))
+                    insert_private_messages(db, sender, receiver, plain_message)
+                    print(f'{sender} sent: {plain_message}')
+                else:
+                    print(f"You are not connected to {sender}!")
+            else:
+                print(mess)
         # endregion
 
         # region create group
@@ -188,7 +218,7 @@ def send_client(client_socket):
         # endregion
 
         # region Login
-        elif message.startswith("login"):
+        elif message.startswith("login"): # login username password 
             if logged_in:
                 print("You have already Logged in.")
             else:
@@ -223,8 +253,10 @@ def send_client(client_socket):
             index2 = message.find('\"', index + 1)
             plain_message = message[index + 1:index2]
             if des_username in sessions:
-                encrypted_message = encrypt_message(plain_message, sessions[des_username])
-                concat_message = "send-private-message " + des_username + ' \"' + encrypted_message + '\"'
+                integer_key = int(sessions[des_username])
+                print(integer_key)
+                encrypted_message = encrypt_message_symmetric(plain_message, integer_key)
+                concat_message = "send-private-message " + des_username + ' \"' + encrypted_message.decode() + '\"'
                 client_socket.send(encrypt_message(concat_message, pukey_server))
             else:
                 print(f"You are not connected to {des_username}")
@@ -305,7 +337,7 @@ def start_client():
 
 
 if __name__ == '__main__':
-    with open("client_config.py") as f:
-        exec(f.read())
+    # with open("client_config.py") as f:
+    #     exec(f.read())
 
     start_client()

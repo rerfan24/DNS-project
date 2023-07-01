@@ -1,6 +1,6 @@
 import socket
 import threading
-from random import random
+import random
 
 import rsa
 import sqlite3
@@ -29,7 +29,8 @@ def handle_client(client_socket, client_address):
     private_key = rsa.PrivateKey.load_pkcs1(open('prkey_server.pem', 'rb').read())
 
     while True:
-        data = decrypt_cipher(client_socket.recv(1024), private_key)
+        received_data = client_socket.recv(1024)
+        data = decrypt_cipher(received_data, private_key)
         print("data: ", data)
         if not data:
             break
@@ -134,12 +135,16 @@ def handle_client(client_socket, client_address):
                     if des_user[3] == 1:
                         print("Creating DH!")
                         current_user = get_user_info_with_username(db, logged_in_user)
+                        prime = generate_prime()
+                        base = random.randint(2, prime - 2)
+                        # client_socket.send()
+                        # client_socket.send()
 
-                        client_socket.send(f'private-connect|DH {des_username} public key: {des_user[2]}'.encode())
+                        client_socket.send(f'private-connect|DH {des_username} prime: {str(prime)} alpha: {str(base)} public key: {des_user[2]}'.encode())
 
                         if current_user != -1:
                             sockets[des_username].send(
-                                f'private-connect|DH {logged_in_user} public key: {current_user[2]}'.encode())
+                                f'private-connect|DH {logged_in_user} prime: {str(prime)} alpha: {str(base)} public key: {current_user[2]}'.encode())
 
                     else:
                         client_socket.send('private-connect|This user is not online.'.encode())
@@ -157,8 +162,10 @@ def handle_client(client_socket, client_address):
             if is_logged_in:
                 if split_data[3] == 'session':
                     if des_username in sockets:
-                        sockets[des_username].send(
-                            f'forward|session {logged_in_user}: {data[data.rfind("session") + 8:]}'.encode())
+                        try:
+                            sockets[des_username].send(f"forward|session {logged_in_user}: ".encode() + b'$$$$' + received_data.split(b'$$$$')[1])
+                        except IndexError:
+                            client_socket.send(f'private-connect|Format of the message is incorrect.'.encode())
                         client_socket.send(f'private-connect|You can now chat with {des_username}'.encode())
                     else:
                         client_socket.send('forward|This user is not online.'.encode())
@@ -172,7 +179,8 @@ def handle_client(client_socket, client_address):
         # endregion
 
         # region private-message
-        elif command == 'send-private-message':
+        elif command == 'send-private-message': # "send-private-message " + des_username + "encrypted_message.decode()"
+            # send-private-message m "$@!#%B%FQRFE"
             if is_logged_in:
                 source_username = logged_in_user
                 des_username = data.split()[1]
@@ -184,24 +192,16 @@ def handle_client(client_socket, client_address):
                 encrypt_chat_message = data[index + 1:index2]
 
                 if check_user_exists(db, des_username):
-                    # TODO send message to the second user and also show
                     des_user = get_user_info_with_username(db, des_username)
-                    if des_user[3] == 1:
-                        client_socket.send('send-private-message|The message has been sent successfully.'.encode())
-                        sockets[des_username].send(f'get-private-message|User:{logged_in_user} '
-                                                   f'- message:{encrypt_chat_message}'.encode())
+                    if des_user != -1 and des_user[3] == 1:
+                        client_socket.send(f'send-private-message|User:{des_username} message:{encrypt_chat_message}'.encode())
+                        sockets[des_username].send(f'get-private-message|User:{logged_in_user} message:{encrypt_chat_message}'.encode())
                     else:
                         client_socket.send('send-private-message|This user is not online.'.encode())
                         continue
-                    # prime = generate_prime()
-                    # base = random.randint(2, prime - 2)
-                    # client_socket.send(str(prime).encode())
-                    # client_socket.send(str(base).encode())
                 else:
                     client_socket.send('send-private-message|This username does not exist, try again.'.encode())
                     continue
-
-                y1_client = int(decrypt_cipher(client_socket.recv(1024), private_key))
             else:
                 client_socket.send('send-private-message|You are not logged in'.encode())
         # endregion
@@ -298,30 +298,6 @@ def handle_client(client_socket, client_address):
             response = 'Message received: {}'.format(data)
             client_socket.send(response.encode())
         # endregion
-
-        # TODO new code according to two threads in client
-        # # region Send Message
-        # elif data == 'send message':
-        #     if is_logged_in:
-        #         client_socket.send('Destination username: '.encode())
-        #         while True:
-        #             des_username = decrypt_cipher(client_socket.recv(1024), private_key)
-        #
-        #             if check_user_exists(db, des_username):
-        #                 break
-        #             else:
-        #                 client_socket.send('This username does not exist, try again: '.encode())
-        #
-        #         client_socket.send('Write your message: '.encode())
-        #         prime = generate_prime()
-        #         base = random.randint(2, prime - 2)
-        #         client_socket.send(str(prime).encode())
-        #         client_socket.send(str(base).encode())
-        #
-        #         y1_client = int(decrypt_cipher(client_socket.recv(1024), private_key))
-        #     else:
-        #         client_socket.send('You are not logged in'.encode())
-        # # endregion
 
     client_socket.close()
     print('Client {} disconnected'.format(client_address))

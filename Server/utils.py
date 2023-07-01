@@ -16,8 +16,9 @@ def encrypt_message(message: str, public_key: rsa.PublicKey):
 
 
 def decrypt_cipher(cipher: bytes, private_key: rsa.PrivateKey) -> str:
+    cipher_message = cipher.split(b'$$$$')[0] 
     n = 64
-    chunks = [cipher[i:i + n] for i in range(0, len(cipher), n)]
+    chunks = [cipher_message[i:i + n] for i in range(0, len(cipher_message), n)]
     chunks_plain = [rsa.decrypt(i, private_key).decode() for i in chunks]
     plain = ''.join(chunks_plain)
     return plain
